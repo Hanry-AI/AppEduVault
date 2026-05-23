@@ -42,6 +42,9 @@ class LoginViewModel @Inject constructor(
     }
 
     fun onLoginClick() {
+        // Đánh dấu đã có ít nhất 1 lần bấm đăng nhập → từ đây mới cho phép hiển thị lỗi đỏ
+        _uiState.update { it.copy(hasAttemptedLogin = true) }
+
         if (!validateInputs()) return
 
         viewModelScope.launch {
@@ -81,7 +84,7 @@ class LoginViewModel @Inject constructor(
 
         val passwordError = when {
             currentState.password.isBlank() -> "Vui lòng nhập mật khẩu"
-            currentState.password.length < 6 -> "Mật khẩu phải có ít nhất 6 ký tự"
+            currentState.password.length < 8 -> "Mật khẩu phải có ít nhất 8 ký tự"
             else -> null
         }
 

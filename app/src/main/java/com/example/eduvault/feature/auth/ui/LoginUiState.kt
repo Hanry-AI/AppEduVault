@@ -13,4 +13,9 @@ data class LoginUiState(
     val passwordError: String? = null,
     val loginError: String? = null,
     val isLoginSuccess: Boolean = false,
+    /**
+     * Chỉ hiển thị cảnh báo lỗi SAU KHI người dùng đã bấm nút Đăng nhập ít nhất 1 lần.
+     * Mặc định false → không hiện lỗi đỏ khi vừa mở app.
+     */
+    val hasAttemptedLogin: Boolean = false,
 )

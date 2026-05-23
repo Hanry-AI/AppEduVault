@@ -22,7 +22,7 @@
     <string name="error_email_empty">Vui lòng nhập email</string>
     <string name="error_email_invalid">Định dạng email không hợp lệ</string>
     <string name="error_password_empty">Vui lòng nhập mật khẩu</string>
-    <string name="error_password_short">Mật khẩu phải có ít nhất 6 ký tự</string>
+    <string name="error_password_short">Mật khẩu phải có ít nhất 8 ký tự</string>
     <string name="error_login_failed">Đăng nhập thất bại. Vui lòng kiểm tra lại.</string>
     <string name="error_network">Lỗi kết nối. Vui lòng thử lại.</string>
 </resources>

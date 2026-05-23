@@ -18,6 +18,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -44,7 +46,6 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +56,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,7 +69,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -84,7 +83,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.eduvault.R
 import com.example.eduvault.core.theme.ColorAmber
 import com.example.eduvault.core.theme.ColorAmberDark
 import com.example.eduvault.core.theme.ColorAmberLight
@@ -93,7 +91,6 @@ import com.example.eduvault.core.theme.ColorCream
 import com.example.eduvault.core.theme.ColorError
 import com.example.eduvault.core.theme.ColorForest
 import com.example.eduvault.core.theme.ColorInk
-import com.example.eduvault.core.theme.ColorInkLight
 import com.example.eduvault.core.theme.ColorPaper
 import com.example.eduvault.core.theme.ColorTextOnDark
 import com.example.eduvault.core.theme.ColorTextOnDarkSecondary
@@ -103,6 +100,11 @@ import com.example.eduvault.core.theme.DmSansFamily
 import com.example.eduvault.core.theme.EduVaultTheme
 import com.example.eduvault.core.theme.JetBrainsMonoFamily
 import com.example.eduvault.core.theme.PlayfairDisplayFamily
+
+// ─── Breakpoint ───────────────────────────────────────────────────────────────
+// < 600dp → Phone Portrait  (layout dọc: header nhỏ + full-width form)
+// ≥ 600dp → Tablet/Landscape (layout ngang: split-screen)
+private val SPLIT_SCREEN_BREAKPOINT = 600.dp
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 
@@ -117,18 +119,13 @@ fun LoginScreen(
 
     // Điều hướng khi login thành công
     LaunchedEffect(uiState.isLoginSuccess) {
-        if (uiState.isLoginSuccess) {
-            onNavigateToHome()
-        }
+        if (uiState.isLoginSuccess) onNavigateToHome()
     }
 
     // Hiện snackbar khi có lỗi
     LaunchedEffect(uiState.loginError) {
         uiState.loginError?.let { error ->
-            snackbarHostState.showSnackbar(
-                message = error,
-                duration = SnackbarDuration.Short
-            )
+            snackbarHostState.showSnackbar(message = error, duration = SnackbarDuration.Short)
             viewModel.onDismissError()
         }
     }
@@ -137,23 +134,42 @@ fun LoginScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = ColorInk,
     ) { paddingValues ->
-        LoginContent(
-            uiState = uiState,
-            onEmailChange = viewModel::onEmailChange,
-            onPasswordChange = viewModel::onPasswordChange,
-            onTogglePasswordVisibility = viewModel::onTogglePasswordVisibility,
-            onLoginClick = viewModel::onLoginClick,
-            onForgotPasswordClick = { /* TODO: navigate to forgot password */ },
-            onRegisterClick = onNavigateToRegister,
-            modifier = Modifier.padding(paddingValues),
-        )
+        // BoxWithConstraints đọc kích thước thực tế của màn hình
+        BoxWithConstraints(modifier = Modifier.padding(paddingValues)) {
+            if (maxWidth < SPLIT_SCREEN_BREAKPOINT) {
+                // ── Phone Portrait: Layout dọc ────────────────────────────
+                PhonePortraitLayout(
+                    uiState = uiState,
+                    onEmailChange = viewModel::onEmailChange,
+                    onPasswordChange = viewModel::onPasswordChange,
+                    onTogglePasswordVisibility = viewModel::onTogglePasswordVisibility,
+                    onLoginClick = viewModel::onLoginClick,
+                    onForgotPasswordClick = { /* TODO */ },
+                    onRegisterClick = onNavigateToRegister,
+                )
+            } else {
+                // ── Tablet / Landscape: Split-screen ──────────────────────
+                TabletLandscapeLayout(
+                    uiState = uiState,
+                    onEmailChange = viewModel::onEmailChange,
+                    onPasswordChange = viewModel::onPasswordChange,
+                    onTogglePasswordVisibility = viewModel::onTogglePasswordVisibility,
+                    onLoginClick = viewModel::onLoginClick,
+                    onForgotPasswordClick = { /* TODO */ },
+                    onRegisterClick = onNavigateToRegister,
+                )
+            }
+        }
     }
 }
 
-// ─── Layout Content ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYOUT 1: PHONE PORTRAIT — Dọc (< 600dp)
+// Header tối nhỏ gọn ở trên, form cream đầy đủ ở dưới
+// ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-private fun LoginContent(
+private fun PhonePortraitLayout(
     uiState: LoginUiState,
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
@@ -161,12 +177,202 @@ private fun LoginContent(
     onLoginClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onRegisterClick: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier.fillMaxSize()
-    ) {
-        // ── Left Panel: Dark background với glow effect ────────────────────
+    val infiniteTransition = rememberInfiniteTransition(label = "phone_glow")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.18f,
+        targetValue = 0.36f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "phone_glow_alpha"
+    )
+
+    Column(modifier = Modifier.fillMaxSize()) {
+
+        // ── Compact Brand Header ───────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .background(ColorInk)
+                .drawBehind {
+                    // Glow ở trung tâm header
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                ColorAmber.copy(alpha = glowAlpha),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.5f, size.height * 0.4f),
+                            radius = size.width * 0.7f
+                        ),
+                        radius = size.width * 0.7f,
+                        center = Offset(size.width * 0.5f, size.height * 0.4f),
+                    )
+                    // Forest glow góc phải dưới
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                ColorForest.copy(alpha = 0.15f),
+                                Color.Transparent
+                            ),
+                            center = Offset(size.width * 0.85f, size.height * 0.9f),
+                            radius = size.width * 0.5f
+                        ),
+                        radius = size.width * 0.5f,
+                        center = Offset(size.width * 0.85f, size.height * 0.9f),
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            // Decorative circle nhỏ góc trên trái
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .align(Alignment.TopStart)
+                    .offset(x = (-20).dp, y = (-20).dp)
+                    .clip(CircleShape)
+                    .border(1.dp, ColorAmber.copy(alpha = 0.15f), CircleShape)
+            )
+            // Decorative circle nhỏ góc phải
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 10.dp, y = 30.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, ColorAmber.copy(alpha = 0.10f), CircleShape)
+            )
+
+            // Brand content — layout ngang (logo | text)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Logo mark
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(ColorAmber, ColorAmberDark)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "E",
+                        fontFamily = PlayfairDisplayFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 26.sp,
+                        color = ColorInk,
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = "EDUVAULT",
+                        fontFamily = JetBrainsMonoFamily,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 10.sp,
+                        color = ColorAmber,
+                        letterSpacing = 3.sp,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = buildAnnotatedString {
+                            append("Nơi lưu giữ ")
+                            withStyle(
+                                SpanStyle(
+                                    fontStyle = FontStyle.Italic,
+                                    color = ColorAmber,
+                                )
+                            ) { append("mọi kiến thức") }
+                        },
+                        fontFamily = PlayfairDisplayFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        lineHeight = 24.sp,
+                        color = ColorTextOnDark,
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Stats nhỏ gọn
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        PhoneBrandStat(number = "500+", label = "Tài liệu")
+                        PhoneBrandStat(number = "12K+", label = "Sinh viên")
+                    }
+                }
+            }
+        }
+
+        // ── Form Panel full-width (chiếm phần còn lại) ────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .background(ColorCream)
+        ) {
+            LoginFormPanel(
+                uiState = uiState,
+                onEmailChange = onEmailChange,
+                onPasswordChange = onPasswordChange,
+                onTogglePasswordVisibility = onTogglePasswordVisibility,
+                onLoginClick = onLoginClick,
+                onForgotPasswordClick = onForgotPasswordClick,
+                onRegisterClick = onRegisterClick,
+                isCompact = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PhoneBrandStat(number: String, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = number,
+            fontFamily = JetBrainsMonoFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            color = ColorAmber,
+        )
+        Text(
+            text = label,
+            fontFamily = DmSansFamily,
+            fontWeight = FontWeight.Normal,
+            fontSize = 11.sp,
+            color = ColorTextOnDarkSecondary,
+        )
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYOUT 2: TABLET / LANDSCAPE — Split-screen (≥ 600dp)
+// Panel trái 42%, Form phải 58%
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+private fun TabletLandscapeLayout(
+    uiState: LoginUiState,
+    onEmailChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
+    onTogglePasswordVisibility: () -> Unit,
+    onLoginClick: () -> Unit,
+    onForgotPasswordClick: () -> Unit,
+    onRegisterClick: () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Left Panel
         LeftBrandPanel(
             modifier = Modifier
                 .fillMaxHeight()
@@ -174,7 +380,7 @@ private fun LoginContent(
                 .align(Alignment.CenterStart)
         )
 
-        // ── Right Panel: Form đăng nhập ────────────────────────────────────
+        // Right Panel
         Box(
             modifier = Modifier
                 .fillMaxHeight()
@@ -198,12 +404,13 @@ private fun LoginContent(
                 onLoginClick = onLoginClick,
                 onForgotPasswordClick = onForgotPasswordClick,
                 onRegisterClick = onRegisterClick,
+                isCompact = false,
             )
         }
     }
 }
 
-// ─── Left Brand Panel ─────────────────────────────────────────────────────────
+// ─── Left Brand Panel (Tablet/Landscape only) ─────────────────────────────────
 
 @Composable
 private fun LeftBrandPanel(modifier: Modifier = Modifier) {
@@ -222,7 +429,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
         modifier = modifier
             .background(ColorInk)
             .drawBehind {
-                // Radial glow màu hổ phách ở giữa-trên
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
@@ -235,7 +441,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
                     radius = size.width * 1.1f,
                     center = Offset(size.width * 0.55f, size.height * 0.28f),
                 )
-                // Secondary glow xanh lá ở góc dưới
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
@@ -258,7 +463,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
                 .offset(x = (-20).dp, y = (-120).dp)
                 .clip(CircleShape)
                 .border(1.dp, ColorAmber.copy(alpha = 0.18f), CircleShape)
-                .background(Color.Transparent)
         )
         Box(
             modifier = Modifier
@@ -275,7 +479,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
                 .border(1.dp, ColorForest.copy(alpha = 0.22f), CircleShape)
         )
 
-        // Brand content
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -306,7 +509,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // App name với JetBrains Mono style tag
             Text(
                 text = "EduVault",
                 fontFamily = JetBrainsMonoFamily,
@@ -318,7 +520,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Tagline với Playfair Display (tạo điểm nhấn nghệ thuật)
             Text(
                 text = buildAnnotatedString {
                     append("Nơi lưu giữ\n")
@@ -328,9 +529,7 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
                             color = ColorAmber,
                             fontFamily = PlayfairDisplayFamily,
                         )
-                    ) {
-                        append("mọi kiến thức")
-                    }
+                    ) { append("mọi kiến thức") }
                 },
                 fontFamily = PlayfairDisplayFamily,
                 fontWeight = FontWeight.Bold,
@@ -341,7 +540,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Description
             Text(
                 text = "Thư viện học liệu thông minh giúp bạn ôn tập và nắm vững từng khái niệm.",
                 fontFamily = DmSansFamily,
@@ -353,7 +551,6 @@ private fun LeftBrandPanel(modifier: Modifier = Modifier) {
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Stats row với JetBrains Mono
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 BrandStat(number = "500+", label = "Tài liệu")
                 BrandStat(number = "12K+", label = "Sinh viên")
@@ -382,7 +579,9 @@ private fun BrandStat(number: String, label: String) {
     }
 }
 
-// ─── Right Form Panel ─────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED: Form Panel — dùng cho cả 2 layout, isCompact điều chỉnh padding/size
+// ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun LoginFormPanel(
@@ -393,26 +592,33 @@ private fun LoginFormPanel(
     onLoginClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onRegisterClick: () -> Unit,
+    isCompact: Boolean,                    // true = phone, false = tablet
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
+
+    // Padding linh hoạt theo kích thước màn hình
+    val horizontalPadding = if (isCompact) 24.dp else 28.dp
+    val verticalPadding   = if (isCompact) 28.dp else 40.dp
+    val titleFontSize     = if (isCompact) 24.sp  else 28.sp
+    val subtitleFontSize  = if (isCompact) 12.sp  else 13.sp
+    val sectionSpacing    = if (isCompact) 20.dp  else 28.dp
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .imePadding()
-            .padding(horizontal = 28.dp, vertical = 40.dp),
+            .padding(horizontal = horizontalPadding, vertical = verticalPadding),
         verticalArrangement = Arrangement.Center,
     ) {
-        // Heading
+        // ── Heading ───────────────────────────────────────────────────────
         Text(
             text = "Chào mừng",
             fontFamily = PlayfairDisplayFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = 28.sp,
+            fontSize = titleFontSize,
             color = ColorInk,
-            lineHeight = 34.sp,
         )
         Text(
             text = buildAnnotatedString {
@@ -423,9 +629,8 @@ private fun LoginFormPanel(
             },
             fontFamily = PlayfairDisplayFamily,
             fontWeight = FontWeight.Bold,
-            fontSize = 28.sp,
+            fontSize = titleFontSize,
             color = ColorInk,
-            lineHeight = 34.sp,
         )
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -434,13 +639,13 @@ private fun LoginFormPanel(
             text = "Đăng nhập để tiếp tục học tập",
             fontFamily = DmSansFamily,
             fontWeight = FontWeight.Normal,
-            fontSize = 13.sp,
+            fontSize = subtitleFontSize,
             color = ColorTextOnLightSecondary,
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(sectionSpacing))
 
-        // Email Field
+        // ── Email Field ───────────────────────────────────────────────────
         LoginTextField(
             value = uiState.email,
             onValueChange = onEmailChange,
@@ -457,13 +662,14 @@ private fun LoginFormPanel(
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next
             ),
-            isError = uiState.emailError != null,
+            // Lỗi chỉ hiện sau khi người dùng đã bấm đăng nhập ít nhất 1 lần
+            isError = uiState.hasAttemptedLogin && uiState.emailError != null,
             errorMessage = uiState.emailError,
         )
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Password Field
+        // ── Password Field ────────────────────────────────────────────────
         LoginTextField(
             value = uiState.password,
             onValueChange = onPasswordChange,
@@ -481,7 +687,7 @@ private fun LoginFormPanel(
                     Icon(
                         imageVector = if (uiState.isPasswordVisible)
                             Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
-                        contentDescription = if (uiState.isPasswordVisible) "Ẩn mật khẩu" else "Hiện mật khẩu",
+                        contentDescription = if (uiState.isPasswordVisible) "Ẩn" else "Hiện",
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -498,11 +704,12 @@ private fun LoginFormPanel(
                     onLoginClick()
                 }
             ),
-            isError = uiState.passwordError != null,
+            // Lỗi chỉ hiện sau khi người dùng đã bấm đăng nhập ít nhất 1 lần
+            isError = uiState.hasAttemptedLogin && uiState.passwordError != null,
             errorMessage = uiState.passwordError,
         )
 
-        // Quên mật khẩu
+        // ── Quên mật khẩu ────────────────────────────────────────────────
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -524,7 +731,7 @@ private fun LoginFormPanel(
 
         Spacer(modifier = Modifier.height(22.dp))
 
-        // Nút đăng nhập
+        // ── Nút đăng nhập ────────────────────────────────────────────────
         LoginButton(
             isLoading = uiState.isLoading,
             onClick = {
@@ -535,16 +742,12 @@ private fun LoginFormPanel(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Divider
+        // ── Divider ───────────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            HorizontalDivider(
-                modifier = Modifier.weight(1f),
-                color = ColorBorder,
-                thickness = 1.dp
-            )
+            HorizontalDivider(modifier = Modifier.weight(1f), color = ColorBorder, thickness = 1.dp)
             Text(
                 text = "  Hoặc  ",
                 fontFamily = DmSansFamily,
@@ -552,21 +755,17 @@ private fun LoginFormPanel(
                 fontSize = 12.sp,
                 color = ColorTextOnLightSecondary,
             )
-            HorizontalDivider(
-                modifier = Modifier.weight(1f),
-                color = ColorBorder,
-                thickness = 1.dp
-            )
+            HorizontalDivider(modifier = Modifier.weight(1f), color = ColorBorder, thickness = 1.dp)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Google button
+        // ── Google button ─────────────────────────────────────────────────
         GoogleSignInButton(onClick = { /* TODO: Google Sign In */ })
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Link đăng ký
+        // ── Link đăng ký ──────────────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Center,
@@ -594,7 +793,7 @@ private fun LoginFormPanel(
     }
 }
 
-// ─── Reusable Components ──────────────────────────────────────────────────────
+// ─── Reusable UI Components ───────────────────────────────────────────────────
 
 @Composable
 private fun LoginTextField(
@@ -619,9 +818,11 @@ private fun LoginTextField(
             fontFamily = DmSansFamily,
             fontWeight = FontWeight.Medium,
             fontSize = 12.sp,
-            color = if (isError) ColorError
-            else if (isFocused) ColorAmberDark
-            else ColorTextOnLightSecondary,
+            color = when {
+                isError  -> ColorError
+                isFocused -> ColorAmberDark
+                else     -> ColorTextOnLightSecondary
+            },
             modifier = Modifier.padding(bottom = 6.dp)
         )
 
@@ -746,7 +947,6 @@ private fun GoogleSignInButton(onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            // Google "G" icon bằng text (không cần icon file)
             Text(
                 text = "G",
                 fontFamily = PlayfairDisplayFamily,
@@ -766,14 +966,54 @@ private fun GoogleSignInButton(onClick: () -> Unit) {
     }
 }
 
-// ─── Preview ──────────────────────────────────────────────────────────────────
+// ─── Previews ─────────────────────────────────────────────────────────────────
 
-@Preview(showBackground = true, widthDp = 400, heightDp = 820)
+/** Preview Phone Portrait (360 × 800dp) */
+@Preview(name = "Phone Portrait", showBackground = true, widthDp = 360, heightDp = 800)
 @Composable
-private fun LoginScreenPreview() {
+private fun LoginPhonePreview() {
     EduVaultTheme(darkTheme = false) {
-        LoginContent(
+        PhonePortraitLayout(
             uiState = LoginUiState(),
+            onEmailChange = {},
+            onPasswordChange = {},
+            onTogglePasswordVisibility = {},
+            onLoginClick = {},
+            onForgotPasswordClick = {},
+            onRegisterClick = {},
+        )
+    }
+}
+
+/** Preview Tablet Landscape (840 × 600dp) */
+@Preview(name = "Tablet Landscape", showBackground = true, widthDp = 840, heightDp = 600)
+@Composable
+private fun LoginTabletPreview() {
+    EduVaultTheme(darkTheme = false) {
+        TabletLandscapeLayout(
+            uiState = LoginUiState(),
+            onEmailChange = {},
+            onPasswordChange = {},
+            onTogglePasswordVisibility = {},
+            onLoginClick = {},
+            onForgotPasswordClick = {},
+            onRegisterClick = {},
+        )
+    }
+}
+
+/** Preview Error State (phone) — mô phỏng sau khi đã bấm đăng nhập */
+@Preview(name = "Phone — Error State", showBackground = true, widthDp = 360, heightDp = 800)
+@Composable
+private fun LoginErrorPreview() {
+    EduVaultTheme(darkTheme = false) {
+        PhonePortraitLayout(
+            uiState = LoginUiState(
+                email = "invalid-email",
+                emailError = "Định dạng email không hợp lệ",
+                passwordError = "Mật khẩu phải có ít nhất 8 ký tự",
+                hasAttemptedLogin = true,  // Simulate sau khi đã bấm nút
+            ),
             onEmailChange = {},
             onPasswordChange = {},
             onTogglePasswordVisibility = {},
