@@ -1,3 +1,28 @@
 <resources>
     <string name="app_name">EduVault</string>
+
+    <!-- Auth Screen -->
+    <string name="auth_brand_tagline">Nơi lưu giữ mọi kiến thức</string>
+    <string name="auth_brand_description">Thư viện học liệu thông minh, giúp bạn\nôn tập và nắm vững từng khái niệm.</string>
+
+    <string name="login_title">Chào mừng trở lại</string>
+    <string name="login_subtitle">Đăng nhập để tiếp tục học tập</string>
+    <string name="login_label_email">Email</string>
+    <string name="login_label_password">Mật khẩu</string>
+    <string name="login_placeholder_email">email@example.com</string>
+    <string name="login_placeholder_password">Nhập mật khẩu</string>
+    <string name="login_btn_submit">Đăng nhập</string>
+    <string name="login_forgot_password">Quên mật khẩu?</string>
+    <string name="login_no_account">Chưa có tài khoản?</string>
+    <string name="login_go_register">Đăng ký ngay</string>
+    <string name="login_or_divider">Hoặc</string>
+    <string name="login_continue_google">Tiếp tục với Google</string>
+
+    <!-- Error messages -->
+    <string name="error_email_empty">Vui lòng nhập email</string>
+    <string name="error_email_invalid">Định dạng email không hợp lệ</string>
+    <string name="error_password_empty">Vui lòng nhập mật khẩu</string>
+    <string name="error_password_short">Mật khẩu phải có ít nhất 6 ký tự</string>
+    <string name="error_login_failed">Đăng nhập thất bại. Vui lòng kiểm tra lại.</string>
+    <string name="error_network">Lỗi kết nối. Vui lòng thử lại.</string>
 </resources>
