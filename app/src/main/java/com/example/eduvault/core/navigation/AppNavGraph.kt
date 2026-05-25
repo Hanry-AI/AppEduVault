@@ -88,7 +88,13 @@ fun AppNavGraph(
 
         // ── Home ────────────────────────────────────────────────────────────
         composable(route = AppRoutes.HOME) {
-            HomeScreen()
+            HomeScreen(
+                onLogout = {
+                    navController.navigate(AppRoutes.LOGIN) {
+                        popUpTo(AppRoutes.HOME) { inclusive = true }
+                    }
+                }
+            )
         }
     }
 }

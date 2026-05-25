@@ -1,0 +1,145 @@
+package com.example.eduvault.feature.profile.ui
+
+import android.content.Context
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.eduvault.domain.repository.AuthRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import javax.inject.Inject
+
+@HiltViewModel
+class ProfileViewModel @Inject constructor(
+    private val authRepository: AuthRepository
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(ProfileUiState())
+    val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+
+    init {
+        loadUserProfile()
+    }
+
+    /**
+     * Tải thông tin tài khoản người dùng hiện tại
+     */
+    fun loadUserProfile() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            authRepository.getCurrentUser()
+                .onSuccess { user ->
+                    _uiState.update {
+                        it.copy(
+                            user = user,
+                            isLoading = false,
+                            editFullName = user?.fullName ?: "",
+                            editUniversity = user?.university ?: "",
+                            editAvatarUrl = user?.avatarUrl ?: ""
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoading = false, errorMessage = error.message) }
+                }
+        }
+    }
+
+    fun onStartEditing() {
+        val user = _uiState.value.user
+        _uiState.update {
+            it.copy(
+                isEditing = true,
+                editFullName = user?.fullName ?: "",
+                editUniversity = user?.university ?: "",
+                editAvatarUrl = user?.avatarUrl ?: "",
+                errorMessage = null,
+                successMessage = null
+            )
+        }
+    }
+
+    fun onCancelEditing() {
+        _uiState.update { it.copy(isEditing = false, errorMessage = null, successMessage = null) }
+    }
+
+    fun onFullNameChange(name: String) {
+        _uiState.update { it.copy(editFullName = name) }
+    }
+
+    fun onUniversityChange(uni: String) {
+        _uiState.update { it.copy(editUniversity = uni) }
+    }
+
+    fun onAvatarSelected(avatarUrl: String) {
+        _uiState.update { it.copy(editAvatarUrl = avatarUrl) }
+    }
+
+    /**
+     * Xử lý sao chép ảnh được chọn từ thiết bị của người dùng vào bộ nhớ trong cục bộ
+     */
+    fun handleCustomAvatarPicked(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val file = File(context.filesDir, "custom_avatar.jpg")
+                val outputStream = FileOutputStream(file)
+                
+                inputStream?.use { input ->
+                    outputStream.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                
+                _uiState.update { it.copy(editAvatarUrl = file.absolutePath) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Không thể tải ảnh đại diện: ${e.localizedMessage}") }
+            }
+        }
+    }
+
+    /**
+     * Lưu thông tin hồ sơ thay đổi vào hệ thống Firebase + Firestore
+     */
+    fun saveProfile() {
+        val state = _uiState.value
+        if (state.editFullName.trim().isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Họ tên không được để trống.") }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true, errorMessage = null, successMessage = null) }
+            authRepository.updateProfile(
+                fullName = state.editFullName.trim(),
+                university = state.editUniversity.trim(),
+                avatarUrl = state.editAvatarUrl
+            ).onSuccess { updatedUser ->
+                _uiState.update {
+                    it.copy(
+                        user = updatedUser,
+                        isSaving = false,
+                        isEditing = false,
+                        successMessage = "Cập nhật hồ sơ thành công!"
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { it.copy(isSaving = false, errorMessage = error.message) }
+            }
+        }
+    }
+
+    /**
+     * Đăng xuất tài khoản
+     */
+    fun logout(onSuccess: () -> Unit) {
+        authRepository.logout()
+        onSuccess()
+    }
+}

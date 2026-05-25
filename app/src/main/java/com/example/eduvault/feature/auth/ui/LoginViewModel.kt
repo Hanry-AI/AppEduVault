@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import com.example.eduvault.domain.repository.AuthRepository
+
 /**
  * ViewModel cho màn hình đăng nhập.
  *
@@ -17,11 +19,10 @@ import javax.inject.Inject
  * - Không có Context, Activity, Fragment, hoặc View nào trong class này.
  * - Trạng thái UI được quản lý 100% qua StateFlow.
  * - Mọi tác vụ bất đồng bộ chạy trong viewModelScope.
- * - TODO: Inject AuthRepository khi hoàn thiện tầng data.
  */
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    // TODO: private val authRepository: AuthRepository
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -49,19 +50,19 @@ class LoginViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, loginError = null) }
-            try {
-                // TODO: Gọi authRepository.login(email, password) khi có data layer
-                // Tạm thời simulate delay để demo UX loading
-                kotlinx.coroutines.delay(1500)
-                _uiState.update { it.copy(isLoading = false, isLoginSuccess = true) }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        loginError = e.message ?: "Đã xảy ra lỗi không xác định"
-                    )
+            val currentState = _uiState.value
+            authRepository.login(currentState.email, currentState.password)
+                .onSuccess {
+                    _uiState.update { it.copy(isLoading = false, isLoginSuccess = true) }
                 }
-            }
+                .onFailure { exception ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            loginError = exception.message ?: "Đã xảy ra lỗi không xác định"
+                        )
+                    }
+                }
         }
     }
 

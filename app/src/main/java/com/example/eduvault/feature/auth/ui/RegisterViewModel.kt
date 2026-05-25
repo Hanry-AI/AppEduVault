@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import com.example.eduvault.domain.repository.AuthRepository
+
 /**
  * ViewModel cho màn hình đăng ký.
  *
@@ -17,11 +19,10 @@ import javax.inject.Inject
  * - Không có Context, Activity, Fragment, hoặc View nào trong class này.
  * - Trạng thái UI được quản lý 100% qua StateFlow.
  * - Mọi tác vụ bất đồng bộ chạy trong viewModelScope.
- * - TODO: Inject AuthRepository khi hoàn thiện tầng data.
  */
 @HiltViewModel
 class RegisterViewModel @Inject constructor(
-    // TODO: private val authRepository: AuthRepository
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RegisterUiState())
@@ -89,15 +90,19 @@ class RegisterViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, registerError = null) }
-            try {
-                // TODO: Gọi authRepository.register(fullName, email, password) khi có data layer
-                kotlinx.coroutines.delay(1500)
+            val currentState = _uiState.value
+            authRepository.register(
+                fullName = currentState.fullName,
+                email = currentState.email,
+                password = currentState.password
+            ).onSuccess {
                 _uiState.update { it.copy(isLoading = false, isRegisterSuccess = true) }
-            } catch (e: Exception) {
+            }
+            .onFailure { exception ->
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        registerError = e.message ?: "Đã xảy ra lỗi không xác định"
+                        registerError = exception.message ?: "Đã xảy ra lỗi không xác định"
                     )
                 }
             }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "279095552082",
+    "project_id": "appeduvault",
+    "storage_bucket": "appeduvault.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:279095552082:android:b11186fdaf4f6869f9178b",
+        "android_client_info": {
+          "package_name": "com.example.eduvault"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCO_uR45DwzS_B5KcapLr3zGb96ip6onic"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
