@@ -1,0 +1,73 @@
+﻿Starting a Gradle Daemon, 1 incompatible and 3 stopped Daemons could not be reused, use --status for details
+
+> Configure project :app
+WARNING: The option setting 'android.disallowKotlinSourceSets=false' is experimental.
+The current default is 'true'.
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:processDebugGoogleServices UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:generateDebugRFile UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets UP-TO-DATE
+> Task :app:compressDebugAssets UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :app:mergeDebugNativeLibs UP-TO-DATE
+> Task :app:stripDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:kspDebugKotlin
+
+> Task :app:compileDebugKotlin
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/home/ui/HomeScreen.kt:126:32 'fun <reified VM : ViewModel> hiltViewModel(viewModelStoreOwner: ViewModelStoreOwner = ..., key: String? = ...): VM' is deprecated. Moved to package: androidx.hilt.lifecycle.viewmodel.compose.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/home/ui/HomeScreen.kt:127:36 'fun <reified VM : ViewModel> hiltViewModel(viewModelStoreOwner: ViewModelStoreOwner = ..., key: String? = ...): VM' is deprecated. Moved to package: androidx.hilt.lifecycle.viewmodel.compose.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/home/ui/HomeScreen.kt:385:39 'val Icons.Outlined.LibraryBooks: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.LibraryBooks.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/home/ui/HomeScreen.kt:950:50 'val Icons.Outlined.ArrowForward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowForward.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/home/ui/HomeScreen.kt:1653:49 Unchecked cast of 'Any?' to 'List<Map<String, Any>>'.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/home/ui/HomeScreen.kt:1817:74 'val Icons.Outlined.ArrowForward: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ArrowForward.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/library/ui/LibraryScreen.kt:116:35 'fun <reified VM : ViewModel> hiltViewModel(viewModelStoreOwner: ViewModelStoreOwner = ..., key: String? = ...): VM' is deprecated. Moved to package: androidx.hilt.lifecycle.viewmodel.compose.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/library/ui/LibraryScreen.kt:453:64 'val Icons.Filled.List: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.List.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/profile/ui/ProfileScreen.kt:109:35 'fun <reified VM : ViewModel> hiltViewModel(viewModelStoreOwner: ViewModelStoreOwner = ..., key: String? = ...): VM' is deprecated. Moved to package: androidx.hilt.lifecycle.viewmodel.compose.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/profile/ui/ProfileScreen.kt:510:56 'val Icons.Outlined.HelpOutline: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.HelpOutline.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/profile/ui/ProfileScreen.kt:531:50 'val Icons.Outlined.ExitToApp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.ExitToApp.
+w: file:///D:/DoAn/DACS3/app/src/main/java/com/example/eduvault/feature/profile/ui/ProfileScreen.kt:1056:54 'val Icons.Outlined.Login: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Outlined.Login.
+
+> Task :app:compileDebugJavaWithJavac
+> Task :app:hiltSyncDebug
+> Task :app:hiltAggregateDepsDebug UP-TO-DATE
+> Task :app:hiltJavaCompileDebug
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:mergeDebugJavaResource UP-TO-DATE
+> Task :app:transformDebugClassesWithAsm
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:mergeProjectDexDebug
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+
+BUILD SUCCESSFUL in 1m 1s
+43 actionable tasks: 10 executed, 33 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.3.1/userguide/configuration_cache_enabling.html

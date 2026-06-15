@@ -1,6 +1,7 @@
 package com.example.eduvault.feature.auth.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -84,7 +85,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.eduvault.core.theme.ColorAmber
 import com.example.eduvault.core.theme.ColorAmberDark
@@ -117,6 +118,8 @@ fun RegisterScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     LaunchedEffect(uiState.isRegisterSuccess) {
         if (uiState.isRegisterSuccess) onNavigateToHome()
@@ -126,6 +129,64 @@ fun RegisterScreen(
         uiState.registerError?.let { error ->
             snackbarHostState.showSnackbar(message = error, duration = SnackbarDuration.Short)
             viewModel.onDismissError()
+        }
+    }
+
+    val onGoogleSignInClick: () -> Unit = {
+        coroutineScope.launch {
+            try {
+                val credentialManager = androidx.credentials.CredentialManager.create(context)
+                
+                // Cấu hình Web Client ID từ Firebase Console
+                val googleIdOption = com.google.android.libraries.identity.googleid.GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId("279095552082-6840smd5qqp453ssbjk7ilhbbimklhdv.apps.googleusercontent.com")
+                    .setAutoSelectEnabled(false)
+                    .build()
+
+                val request = androidx.credentials.GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+
+                val result = credentialManager.getCredential(context, request)
+                val credential = result.credential
+
+                try {
+                    val googleIdTokenCredential = com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.createFrom(credential.data)
+                    val idToken = googleIdTokenCredential.idToken
+                    viewModel.loginWithGoogle(idToken)
+                } catch (parseErr: Exception) {
+                    android.util.Log.e("GoogleSignIn", "Lỗi parse ID Token, sử dụng fallback: ${parseErr.localizedMessage}")
+                    if (credential is com.google.android.libraries.identity.googleid.GoogleIdTokenCredential) {
+                        val idToken = credential.idToken
+                        viewModel.loginWithGoogle(idToken)
+                    } else {
+                        android.util.Log.e("GoogleSignIn", "Loại credential không được hỗ trợ: ${credential.type}")
+                        snackbarHostState.showSnackbar(
+                            message = "Loại xác thực không được hỗ trợ trên thiết bị này.",
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("GoogleSignIn", "Lỗi Credential Manager: ${e.localizedMessage}", e)
+                
+                val errorMessage = when (e) {
+                    is androidx.credentials.exceptions.GetCredentialCancellationException -> {
+                        "Bạn đã hủy đăng ký bằng tài khoản Google."
+                    }
+                    is androidx.credentials.exceptions.NoCredentialException -> {
+                        "Không tìm thấy tài khoản Google phù hợp trên thiết bị."
+                    }
+                    else -> {
+                        "Không thể kết nối Google Sign-In. Vui lòng tạo tài khoản bằng Email/Password."
+                    }
+                }
+                snackbarHostState.showSnackbar(
+                    message = errorMessage,
+                    duration = SnackbarDuration.Long
+                )
+            }
         }
     }
 
@@ -145,6 +206,7 @@ fun RegisterScreen(
                     onToggleConfirmPasswordVisibility = viewModel::onToggleConfirmPasswordVisibility,
                     onRegisterClick = viewModel::onRegisterClick,
                     onLoginClick = onNavigateToLogin,
+                    onGoogleSignInClick = onGoogleSignInClick,
                 )
             } else {
                 RegisterTabletLandscapeLayout(
@@ -157,15 +219,12 @@ fun RegisterScreen(
                     onToggleConfirmPasswordVisibility = viewModel::onToggleConfirmPasswordVisibility,
                     onRegisterClick = viewModel::onRegisterClick,
                     onLoginClick = onNavigateToLogin,
+                    onGoogleSignInClick = onGoogleSignInClick,
                 )
             }
         }
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// LAYOUT 1: PHONE PORTRAIT (< 600dp)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
 private fun RegisterPhonePortraitLayout(
@@ -178,6 +237,7 @@ private fun RegisterPhonePortraitLayout(
     onToggleConfirmPasswordVisibility: () -> Unit,
     onRegisterClick: () -> Unit,
     onLoginClick: () -> Unit,
+    onGoogleSignInClick: () -> Unit,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "register_phone_glow")
     val glowAlpha by infiniteTransition.animateFloat(
@@ -191,74 +251,56 @@ private fun RegisterPhonePortraitLayout(
     )
 
     Column(modifier = Modifier.fillMaxSize()) {
-
-        // ── Compact Brand Header ───────────────────────────────────────────
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(180.dp)
                 .background(ColorInk)
                 .drawBehind {
-                    // Glow chính — màu Amber (vàng)
                     drawCircle(
                         brush = Brush.radialGradient(
                             colors = listOf(
                                 ColorAmber.copy(alpha = glowAlpha),
                                 Color.Transparent
                             ),
-                            center = Offset(size.width * 0.35f, size.height * 0.5f),
-                            radius = size.width * 0.75f
+                            center = Offset(size.width * 0.5f, size.height * 0.35f),
+                            radius = size.width * 0.95f
                         ),
-                        radius = size.width * 0.75f,
-                        center = Offset(size.width * 0.35f, size.height * 0.5f),
-                    )
-                    // Glow phụ — forest góc phải
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                ColorForest.copy(alpha = 0.15f),
-                                Color.Transparent
-                            ),
-                            center = Offset(size.width * 0.88f, size.height * 0.3f),
-                            radius = size.width * 0.5f
-                        ),
-                        radius = size.width * 0.5f,
-                        center = Offset(size.width * 0.88f, size.height * 0.3f),
+                        radius = size.width * 0.95f,
+                        center = Offset(size.width * 0.5f, size.height * 0.35f),
                     )
                 },
             contentAlignment = Alignment.Center
         ) {
-            // Decorative circles
             Box(
                 modifier = Modifier
-                    .size(70.dp)
-                    .align(Alignment.TopEnd)
-                    .offset(x = 15.dp, y = (-15).dp)
+                    .size(90.dp)
+                    .align(Alignment.TopStart)
+                    .offset(x = (-30).dp, y = (-20).dp)
                     .clip(CircleShape)
-                    .border(1.dp, ColorAmberLight.copy(alpha = 0.20f), CircleShape)
+                    .border(1.dp, ColorAmberLight.copy(alpha = 0.18f), CircleShape)
             )
             Box(
                 modifier = Modifier
-                    .size(45.dp)
-                    .align(Alignment.BottomStart)
-                    .offset(x = 12.dp, y = 10.dp)
+                    .size(60.dp)
+                    .align(Alignment.TopEnd)
+                    .offset(x = 15.dp, y = 20.dp)
                     .clip(CircleShape)
-                    .border(1.dp, ColorAmber.copy(alpha = 0.13f), CircleShape)
+                    .border(1.dp, ColorAmber.copy(alpha = 0.12f), CircleShape)
             )
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 28.dp),
+                    .padding(horizontal = 24.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Logo mark — Amber gradient
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(13.dp))
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(
                             brush = Brush.linearGradient(
                                 colors = listOf(ColorAmber, ColorAmberDark)
@@ -270,7 +312,7 @@ private fun RegisterPhonePortraitLayout(
                         text = "E",
                         fontFamily = PlayfairDisplayFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 26.sp,
+                        fontSize = 24.sp,
                         color = ColorInk,
                     )
                 }
@@ -301,20 +343,10 @@ private fun RegisterPhonePortraitLayout(
                         lineHeight = 22.sp,
                         color = ColorTextOnDark,
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Miễn phí · Không giới hạn · Học mọi lúc",
-                        fontFamily = JetBrainsMonoFamily,
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 9.sp,
-                        color = ColorTextOnDarkSecondary,
-                        letterSpacing = 0.5.sp,
-                    )
                 }
             }
         }
 
-        // ── Form Panel ────────────────────────────────────────────────────
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -332,6 +364,7 @@ private fun RegisterPhonePortraitLayout(
                 onToggleConfirmPasswordVisibility = onToggleConfirmPasswordVisibility,
                 onRegisterClick = onRegisterClick,
                 onLoginClick = onLoginClick,
+                onGoogleSignInClick = onGoogleSignInClick,
                 isCompact = true,
             )
         }
@@ -353,6 +386,7 @@ private fun RegisterTabletLandscapeLayout(
     onToggleConfirmPasswordVisibility: () -> Unit,
     onRegisterClick: () -> Unit,
     onLoginClick: () -> Unit,
+    onGoogleSignInClick: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         RegisterLeftBrandPanel(
@@ -384,6 +418,7 @@ private fun RegisterTabletLandscapeLayout(
                 onToggleConfirmPasswordVisibility = onToggleConfirmPasswordVisibility,
                 onRegisterClick = onRegisterClick,
                 onLoginClick = onLoginClick,
+                onGoogleSignInClick = onGoogleSignInClick,
                 isCompact = false,
             )
         }
@@ -575,6 +610,7 @@ private fun RegisterFormPanel(
     onToggleConfirmPasswordVisibility: () -> Unit,
     onRegisterClick: () -> Unit,
     onLoginClick: () -> Unit,
+    onGoogleSignInClick: () -> Unit,
     isCompact: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -808,7 +844,7 @@ private fun RegisterFormPanel(
         Spacer(modifier = Modifier.height(14.dp))
 
         // ── Google button ─────────────────────────────────────────────────
-        GoogleRegisterButton(onClick = { /* TODO: Google Sign In */ })
+        GoogleRegisterButton(onClick = onGoogleSignInClick)
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -1029,6 +1065,7 @@ private fun RegisterPhonePreview() {
             onToggleConfirmPasswordVisibility = {},
             onRegisterClick = {},
             onLoginClick = {},
+            onGoogleSignInClick = {},
         )
     }
 }
@@ -1047,6 +1084,7 @@ private fun RegisterTabletPreview() {
             onToggleConfirmPasswordVisibility = {},
             onRegisterClick = {},
             onLoginClick = {},
+            onGoogleSignInClick = {},
         )
     }
 }
@@ -1075,6 +1113,7 @@ private fun RegisterErrorPreview() {
             onToggleConfirmPasswordVisibility = {},
             onRegisterClick = {},
             onLoginClick = {},
+            onGoogleSignInClick = {},
         )
     }
 }

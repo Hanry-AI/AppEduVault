@@ -1,6 +1,7 @@
 package com.example.eduvault.feature.auth.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import kotlinx.coroutines.launch
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -81,7 +82,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.eduvault.core.theme.ColorAmber
 import com.example.eduvault.core.theme.ColorAmberDark
@@ -117,6 +118,8 @@ fun LoginScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     // Điều hướng khi login thành công
     LaunchedEffect(uiState.isLoginSuccess) {
@@ -128,6 +131,64 @@ fun LoginScreen(
         uiState.loginError?.let { error ->
             snackbarHostState.showSnackbar(message = error, duration = SnackbarDuration.Short)
             viewModel.onDismissError()
+        }
+    }
+
+    val onGoogleSignInClick: () -> Unit = {
+        coroutineScope.launch {
+            try {
+                val credentialManager = androidx.credentials.CredentialManager.create(context)
+                
+                // Cấu hình Web Client ID từ Firebase Console
+                val googleIdOption = com.google.android.libraries.identity.googleid.GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId("279095552082-6840smd5qqp453ssbjk7ilhbbimklhdv.apps.googleusercontent.com")
+                    .setAutoSelectEnabled(false)
+                    .build()
+
+                val request = androidx.credentials.GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+
+                val result = credentialManager.getCredential(context, request)
+                val credential = result.credential
+
+                try {
+                    val googleIdTokenCredential = com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.createFrom(credential.data)
+                    val idToken = googleIdTokenCredential.idToken
+                    viewModel.loginWithGoogle(idToken)
+                } catch (parseErr: Exception) {
+                    android.util.Log.e("GoogleSignIn", "Lỗi parse ID Token, sử dụng fallback: ${parseErr.localizedMessage}")
+                    if (credential is com.google.android.libraries.identity.googleid.GoogleIdTokenCredential) {
+                        val idToken = credential.idToken
+                        viewModel.loginWithGoogle(idToken)
+                    } else {
+                        android.util.Log.e("GoogleSignIn", "Loại credential không được hỗ trợ: ${credential.type}")
+                        snackbarHostState.showSnackbar(
+                            message = "Loại xác thực không được hỗ trợ trên thiết bị này.",
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("GoogleSignIn", "Lỗi Credential Manager: ${e.localizedMessage}", e)
+                
+                val errorMessage = when (e) {
+                    is androidx.credentials.exceptions.GetCredentialCancellationException -> {
+                        "Bạn đã hủy đăng nhập bằng tài khoản Google."
+                    }
+                    is androidx.credentials.exceptions.NoCredentialException -> {
+                        "Không tìm thấy tài khoản Google phù hợp trên thiết bị."
+                    }
+                    else -> {
+                        "Không thể kết nối Google Sign-In. Vui lòng nhập Email/Password."
+                    }
+                }
+                snackbarHostState.showSnackbar(
+                    message = errorMessage,
+                    duration = SnackbarDuration.Long
+                )
+            }
         }
     }
 
@@ -147,6 +208,7 @@ fun LoginScreen(
                     onLoginClick = viewModel::onLoginClick,
                     onForgotPasswordClick = onNavigateToForgotPassword,
                     onRegisterClick = onNavigateToRegister,
+                    onGoogleSignInClick = onGoogleSignInClick,
                 )
             } else {
                 // ── Tablet / Landscape: Split-screen ──────────────────────
@@ -158,11 +220,13 @@ fun LoginScreen(
                     onLoginClick = viewModel::onLoginClick,
                     onForgotPasswordClick = onNavigateToForgotPassword,
                     onRegisterClick = onNavigateToRegister,
+                    onGoogleSignInClick = onGoogleSignInClick,
                 )
             }
         }
     }
 }
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // LAYOUT 1: PHONE PORTRAIT — Dọc (< 600dp)
@@ -178,6 +242,7 @@ private fun PhonePortraitLayout(
     onLoginClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onRegisterClick: () -> Unit,
+    onGoogleSignInClick: () -> Unit,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "phone_glow")
     val glowAlpha by infiniteTransition.animateFloat(
@@ -331,6 +396,7 @@ private fun PhonePortraitLayout(
                 onLoginClick = onLoginClick,
                 onForgotPasswordClick = onForgotPasswordClick,
                 onRegisterClick = onRegisterClick,
+                onGoogleSignInClick = onGoogleSignInClick,
                 isCompact = true,
             )
         }
@@ -371,6 +437,7 @@ private fun TabletLandscapeLayout(
     onLoginClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onRegisterClick: () -> Unit,
+    onGoogleSignInClick: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         // Left Panel
@@ -405,6 +472,7 @@ private fun TabletLandscapeLayout(
                 onLoginClick = onLoginClick,
                 onForgotPasswordClick = onForgotPasswordClick,
                 onRegisterClick = onRegisterClick,
+                onGoogleSignInClick = onGoogleSignInClick,
                 isCompact = false,
             )
         }
@@ -593,6 +661,7 @@ private fun LoginFormPanel(
     onLoginClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
     onRegisterClick: () -> Unit,
+    onGoogleSignInClick: () -> Unit,
     isCompact: Boolean,                    // true = phone, false = tablet
     modifier: Modifier = Modifier,
 ) {
@@ -762,7 +831,7 @@ private fun LoginFormPanel(
         Spacer(modifier = Modifier.height(16.dp))
 
         // ── Google button ─────────────────────────────────────────────────
-        GoogleSignInButton(onClick = { /* TODO: Google Sign In */ })
+        GoogleSignInButton(onClick = onGoogleSignInClick)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -982,6 +1051,7 @@ private fun LoginPhonePreview() {
             onLoginClick = {},
             onForgotPasswordClick = {},
             onRegisterClick = {},
+            onGoogleSignInClick = {},
         )
     }
 }
@@ -999,6 +1069,7 @@ private fun LoginTabletPreview() {
             onLoginClick = {},
             onForgotPasswordClick = {},
             onRegisterClick = {},
+            onGoogleSignInClick = {},
         )
     }
 }
@@ -1021,6 +1092,7 @@ private fun LoginErrorPreview() {
             onLoginClick = {},
             onForgotPasswordClick = {},
             onRegisterClick = {},
+            onGoogleSignInClick = {},
         )
     }
 }

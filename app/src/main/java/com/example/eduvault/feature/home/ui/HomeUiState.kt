@@ -1,16 +1,20 @@
 package com.example.eduvault.feature.home.ui
 
+import com.example.eduvault.domain.model.AuthState
+
 /**
  * Trạng thái UI của màn hình Home.
  */
 data class HomeUiState(
-    val userName: String = "Gamer Hary",
-    val university: String = "ĐH Kinh tế TP.HCM",
+    val userName: String = "Bạn",
+    val university: String = "Nền tảng chia sẻ tài liệu học thuật",
     val followCount: Int = 0,
     val uploadCount: Int = 0,
     val savedCount: Int = 12,
     val isLoading: Boolean = false,
     val selectedTab: HomeTab = HomeTab.HOME,
+    /** Trạng thái xác thực — Guest hoặc Authenticated */
+    val authState: AuthState = AuthState.Guest,
 )
 
 enum class HomeTab {

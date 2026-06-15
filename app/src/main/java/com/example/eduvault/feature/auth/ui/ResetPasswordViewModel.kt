@@ -2,6 +2,7 @@ package com.example.eduvault.feature.auth.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.SavedStateHandle
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,11 +24,23 @@ import com.example.eduvault.domain.repository.AuthRepository
  */
 @HiltViewModel
 class ResetPasswordViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ResetPasswordUiState())
     val uiState: StateFlow<ResetPasswordUiState> = _uiState.asStateFlow()
+
+    private val oobCode: String? = savedStateHandle.get<String>("oobCode")
+
+    init {
+        _uiState.update {
+            it.copy(
+                oobCode = oobCode,
+                isDemoMode = oobCode == null
+            )
+        }
+    }
 
     // ─── Event handlers ───────────────────────────────────────────────────────
 
@@ -57,10 +70,26 @@ class ResetPasswordViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            // Note: Firebase Auth reset link handles the actual secure password change securely.
-            // This screen allows testing and demonstrating the beautiful UX flow seamlessly.
-            delay(1500)
-            _uiState.update { it.copy(isLoading = false, isResetSuccess = true) }
+            val currentOobCode = _uiState.value.oobCode
+            if (currentOobCode != null) {
+                // Luồng Firebase đặt lại mật khẩu thật
+                authRepository.confirmPasswordReset(currentOobCode, _uiState.value.newPassword)
+                    .onSuccess {
+                        _uiState.update { it.copy(isLoading = false, isResetSuccess = true) }
+                    }
+                    .onFailure { exception ->
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = exception.message ?: "Đặt lại mật khẩu thất bại. Vui lòng gửi lại yêu cầu."
+                            )
+                        }
+                    }
+            } else {
+                // Chế độ Demo
+                delay(1500)
+                _uiState.update { it.copy(isLoading = false, isResetSuccess = true) }
+            }
         }
     }
 

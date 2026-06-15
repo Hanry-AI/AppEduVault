@@ -11,11 +11,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.example.eduvault.domain.repository.AuthRepository
+import com.example.eduvault.domain.repository.DocumentRepository
+import com.example.eduvault.domain.repository.AiRepository
+import com.example.eduvault.domain.repository.NotificationRepository
+import com.example.eduvault.domain.model.NotificationType
 import javax.inject.Inject
 
 @HiltViewModel
 class QuizViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val documentRepository: DocumentRepository,
+    private val aiRepository: AiRepository,
+    private val notificationRepository: NotificationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(QuizUiState())
@@ -23,6 +30,9 @@ class QuizViewModel @Inject constructor(
 
     private val _availableDocs = MutableStateFlow<List<com.example.eduvault.feature.library.ui.LibraryDoc>>(emptyList())
     val availableDocs: StateFlow<List<com.example.eduvault.feature.library.ui.LibraryDoc>> = _availableDocs.asStateFlow()
+
+    private val allQuizSetsList = mutableListOf<QuizSet>()
+    private val localQuestionsCache = mutableMapOf<String, List<com.example.eduvault.feature.quiz.ui.QuizQuestion>>()
 
 
     private var timerJob: Job? = null
@@ -184,15 +194,294 @@ class QuizViewModel @Inject constructor(
         )
     )
 
+    // Bộ câu hỏi cho môn Thống kê (id = "3")
+    private val statisticsQuestions = listOf(
+        QuizQuestion(
+            id = "q3_1",
+            text = "Trong thống kê, giá trị xuất hiện nhiều nhất trong một tập dữ liệu được gọi là:",
+            hint = "Gợi ý: Từ mang ý nghĩa 'phổ biến nhất' hay 'xu hướng'.",
+            options = listOf(
+                QuizAnswer("A", "Số trung bình (Mean)"),
+                QuizAnswer("B", "Số yếu vị (Mode)"),
+                QuizAnswer("C", "Số trung vị (Median)"),
+                QuizAnswer("D", "Độ lệch chuẩn (Standard Deviation)")
+            ),
+            correctOption = "B",
+            explanation = "Số yếu vị (Mode) là giá trị có tần số xuất hiện lớn nhất trong tập hợp dữ liệu thống kê."
+        ),
+        QuizQuestion(
+            id = "q3_2",
+            text = "Tổng xác suất của toàn bộ các biến cố sơ cấp cấu thành một không gian mẫu bằng:",
+            hint = "Gợi ý: Tổng thể của tất cả các khả năng chắc chắn xảy ra.",
+            options = listOf(
+                QuizAnswer("A", "0"),
+                QuizAnswer("B", "0.5"),
+                QuizAnswer("C", "1"),
+                QuizAnswer("D", "Vô hạn")
+            ),
+            correctOption = "C",
+            explanation = "Theo tiên đề xác suất Kolmogorov, xác suất của biến cố chắc chắn (toàn bộ không gian mẫu) luôn luôn bằng 1."
+        ),
+        QuizQuestion(
+            id = "q3_3",
+            text = "Sai lầm loại I (Type I error) xảy ra khi nào trong quá trình kiểm định giả thuyết thống kê?",
+            hint = "Gợi ý: Bác bỏ một sự thật đúng đắn.",
+            options = listOf(
+                QuizAnswer("A", "Bác bỏ giả thuyết H0 khi H0 thực tế là Đúng"),
+                QuizAnswer("B", "Chấp nhận giả thuyết H0 khi H0 thực tế là Sai"),
+                QuizAnswer("C", "Bác bỏ giả thuyết H1 khi H1 thực tế là Đúng"),
+                QuizAnswer("D", "Chấp nhận giả thuyết H1 khi H1 thực tế là Sai")
+            ),
+            correctOption = "A",
+            explanation = "Sai lầm loại I xảy ra khi ta bác bỏ giả thuyết không (H0) mặc dù trong thực tế giả thuyết H0 đó hoàn toàn đúng (xác suất xảy ra sai lầm này gọi là mức ý nghĩa alpha)."
+        ),
+        QuizQuestion(
+            id = "q3_4",
+            text = "Đại lượng nào đo lường mức độ phân tán hoặc biến động của các số liệu so với giá trị trung bình?",
+            hint = "Gợi ý: Khoảng cách lệch chuẩn bình phương trung bình.",
+            options = listOf(
+                QuizAnswer("A", "Tần số tích lũy"),
+                QuizAnswer("B", "Độ lệch chuẩn (Standard Deviation)"),
+                QuizAnswer("C", "Khoảng tứ phân vị"),
+                QuizAnswer("D", "Hệ số tương quan")
+            ),
+            correctOption = "B",
+            explanation = "Độ lệch chuẩn là thước đo mức độ phân tán của dữ liệu xung quanh giá trị trung bình cộng. Độ lệch chuẩn càng lớn chứng tỏ dữ liệu biến động càng nhiều."
+        ),
+        QuizQuestion(
+            id = "q3_5",
+            text = "Phân phối xác suất liên tục Gauss trong tự nhiên còn được gọi phổ biến với tên là:",
+            hint = "Gợi ý: Hình chuông đối xứng chuẩn mực.",
+            options = listOf(
+                QuizAnswer("A", "Phân phối chuẩn (Normal distribution)"),
+                QuizAnswer("B", "Phân phối nhị thức"),
+                QuizAnswer("C", "Phân phối Poisson"),
+                QuizAnswer("D", "Phân phối t-Student")
+            ),
+            correctOption = "A",
+            explanation = "Phân phối chuẩn (hay phân phối Gauss) là phân phối xác suất liên tục cực kỳ quan trọng, có đồ thị dạng hình chuông đối xứng đặc trưng xuất hiện trong rất nhiều hiện tượng tự nhiên."
+        )
+    )
+
+    // Bộ câu hỏi cho môn Luật đại cương (id = "4")
+    private val lawQuestions = listOf(
+        QuizQuestion(
+            id = "q4_1",
+            text = "Văn bản pháp lý nào có hiệu lực pháp lý cao nhất trong hệ thống pháp luật Việt Nam?",
+            hint = "Gợi ý: Đạo luật cơ bản, gốc rễ của mọi đạo luật.",
+            options = listOf(
+                QuizAnswer("A", "Hiến pháp"),
+                QuizAnswer("B", "Bộ luật Hình sự"),
+                QuizAnswer("C", "Luật Dân sự"),
+                QuizAnswer("D", "Nghị định của Chính phủ")
+            ),
+            correctOption = "A",
+            explanation = "Hiến pháp là luật cơ bản của Nhà nước, có hiệu lực pháp lý tối cao. Mọi văn bản quy phạm pháp luật khác đều phải phù hợp và không được trái với Hiến pháp."
+        ),
+        QuizQuestion(
+            id = "q4_2",
+            text = "Năng lực hành vi dân sự của cá nhân đạt mức đầy đủ khi đạt các điều kiện nào sau đây?",
+            hint = "Gợi ý: Tuổi thành niên và trí tuệ bình thường.",
+            options = listOf(
+                QuizAnswer("A", "Từ lúc vừa sinh ra khỏe mạnh"),
+                QuizAnswer("B", "Từ đủ 16 tuổi trở lên"),
+                QuizAnswer("C", "Từ đủ 18 tuổi trở lên và không bị mất/hạn chế năng lực hành vi"),
+                QuizAnswer("D", "Đã lập gia đình hoặc đi làm có lương")
+            ),
+            correctOption = "C",
+            explanation = "Theo Bộ luật Dân sự, người từ đủ 18 tuổi trở lên (trừ trường hợp mất, hạn chế năng lực hành vi dân sự hoặc có khó khăn trong nhận thức) có năng lực hành vi dân sự đầy đủ."
+        ),
+        QuizQuestion(
+            id = "q4_3",
+            text = "Cơ quan nào của nước Cộng hòa xã hội chủ nghĩa Việt Nam có quyền lập hiến và lập pháp cao nhất?",
+            hint = "Gợi ý: Do cử tri cả nước trực tiếp bầu ra.",
+            options = listOf(
+                QuizAnswer("A", "Quốc hội"),
+                QuizAnswer("B", "Chính phủ"),
+                QuizAnswer("C", "Tòa án nhân dân tối cao"),
+                QuizAnswer("D", "Chủ tịch nước")
+            ),
+            correctOption = "A",
+            explanation = "Quốc hội là cơ quan đại biểu cao nhất của Nhân dân, cơ quan quyền lực nhà nước cao nhất, thực hiện quyền lập hiến và lập pháp."
+        ),
+        QuizQuestion(
+            id = "q4_4",
+            text = "Mọi hành vi vi phạm pháp luật đầy đủ đều được cấu thành từ 4 yếu tố nào?",
+            hint = "Gợi ý: Bao gồm bên trong, bên ngoài, người làm và cái bị xâm hại.",
+            options = listOf(
+                QuizAnswer("A", "Mặt khách quan, Mặt chủ quan, Chủ thể, Khách thể"),
+                QuizAnswer("B", "Hành động cố ý, Hậu quả nghiêm trọng, Vũ khí, Nhân chứng"),
+                QuizAnswer("C", "Người phạm tội, Động cơ, Hiện trường, Tang vật"),
+                QuizAnswer("D", "Quy tắc đạo đức, Hành vi sai lệch, Hình phạt, Sự lên án")
+            ),
+            correctOption = "A",
+            explanation = "Cấu thành vi phạm pháp luật bao gồm: Chủ thể (người thực hiện), Khách thể (quan hệ được bảo vệ bị xâm hại), Mặt khách quan (hành vi bên ngoài) và Mặt chủ quan (tâm lý lỗi bên trong)."
+        ),
+        QuizQuestion(
+            id = "q4_5",
+            text = "Quy phạm pháp luật là quy tắc xử sự do nhà nước ban hành mang tính chất đặc trưng nào?",
+            hint = "Gợi ý: Áp dụng rộng rãi và có tính cưỡng chế.",
+            options = listOf(
+                QuizAnswer("A", "Khuyến khích đạo đức tự nguyện"),
+                QuizAnswer("B", "Bắt buộc chung (Tính quyền lực nhà nước)"),
+                QuizAnswer("C", "Tùy nghi áp dụng theo sở thích"),
+                QuizAnswer("D", "Giới hạn trong nội bộ một công ty")
+            ),
+            correctOption = "B",
+            explanation = "Quy phạm pháp luật do Nhà nước ban hành hoặc thừa nhận, được Nhà nước bảo đảm thực hiện bằng quyền lực pháp lý mang tính bắt buộc chung đối với mọi cá nhân, tổ chức."
+        )
+    )
+
+    // Bộ câu hỏi cho môn Tài chính (id = "5")
+    private val financeQuestions = listOf(
+        QuizQuestion(
+            id = "q5_1",
+            text = "Giá trị hiện tại (PV) của một khoản tiền thu hoạch trong tương lai sẽ biến động thế nào nếu lãi suất chiết khấu tăng lên?",
+            hint = "Gợi ý: Chiết khấu càng mạnh thì giá trị quy về hiện tại càng bé.",
+            options = listOf(
+                QuizAnswer("A", "Tăng lên tỷ lệ thuận"),
+                QuizAnswer("B", "Giảm đi"),
+                QuizAnswer("C", "Không thay đổi"),
+                QuizAnswer("D", "Luôn bằng 0")
+            ),
+            correctOption = "B",
+            explanation = "Giá trị hiện tại PV = FV / (1 + r)^n. Do lãi suất chiết khấu r nằm dưới mẫu số, khi r tăng lên thì PV chắc chắn sẽ giảm đi."
+        ),
+        QuizQuestion(
+            id = "q5_2",
+            text = "Hệ thống phân tích tài chính DuPont phân rã chỉ tiêu hiệu quả ROE (Tỷ suất sinh lời trên vốn chủ sở hữu) thành mấy nhân tố chính?",
+            hint = "Gợi ý: Doanh thu, tài sản và đòn bẩy.",
+            options = listOf(
+                QuizAnswer("A", "2 nhân tố"),
+                QuizAnswer("B", "3 nhân tố (Biên lợi nhuận ròng, Vòng quay tài sản, Hệ số nhân vốn chủ sở hữu)"),
+                QuizAnswer("C", "4 nhân tố"),
+                QuizAnswer("D", "5 nhân tố")
+            ),
+            correctOption = "B",
+            explanation = "Mô hình DuPont truyền thống phân rã ROE = Biên lợi nhuận ròng (Net Profit Margin) * Vòng quay tổng tài sản (Asset Turnover) * Hệ số đòn bẩy tài chính (Equity Multiplier)."
+        ),
+        QuizQuestion(
+            id = "q5_3",
+            text = "Rủi ro hệ thống (Systematic risk / Market risk) trong đầu tư tài chính được hiểu là:",
+            hint = "Gợi ý: Rủi ro tác động toàn thị trường như thiên tai, lãi suất vĩ mô.",
+            options = listOf(
+                QuizAnswer("A", "Có thể loại bỏ triệt để nhờ đa dạng hóa danh mục đầu tư"),
+                QuizAnswer("B", "Không thể loại bỏ hoàn toàn bằng cách đa dạng hóa"),
+                QuizAnswer("C", "Chỉ xuất phát từ nội bộ năng lực yếu kém của một doanh nghiệp"),
+                QuizAnswer("D", "Lỗi phát sinh do hư hỏng phần mềm giao dịch chứng khoán")
+            ),
+            correctOption = "B",
+            explanation = "Rủi ro hệ thống ảnh hưởng đến toàn bộ nền kinh tế hoặc thị trường tài chính vĩ mô (ví dụ lạm phát, chiến tranh), do đó không thể triệt tiêu hoàn toàn bằng cách đa dạng hóa danh mục."
+        ),
+        QuizQuestion(
+            id = "q5_4",
+            text = "Chi phí cơ hội của việc cá nhân quyết định tích trữ nhiều tiền mặt trong két sắt là gì?",
+            hint = "Gợi ý: Mất đi khoản lợi ích nếu đem số tiền đó đầu tư sinh lời.",
+            options = listOf(
+                QuizAnswer("A", "Phí dịch vụ ngân hàng gửi rút"),
+                QuizAnswer("B", "Thuế thu nhập cá nhân"),
+                QuizAnswer("C", "Khoản lãi suất hoặc lợi ích từ cơ hội đầu tư thay thế bị bỏ lỡ"),
+                QuizAnswer("D", "Phí bảo dưỡng két sắt định kỳ")
+            ),
+            correctOption = "C",
+            explanation = "Chi phí cơ hội là lợi ích tối đa bị mất đi khi lựa chọn phương án này thay vì phương án khác. Giữ tiền mặt sẽ làm mất khoản lãi suất ngân hàng hoặc lợi nhuận từ chứng khoán."
+        ),
+        QuizQuestion(
+            id = "q5_5",
+            text = "Công thức tính Giá trị tương lai (FV) của một khoản tiền gửi ban đầu PV nhận lãi kép r% mỗi năm sau n kỳ hạn là:",
+            hint = "Gợi ý: Lũy thừa theo thời gian.",
+            options = listOf(
+                QuizAnswer("A", "FV = PV * (1 + r)^n"),
+                QuizAnswer("B", "FV = PV * (1 + r * n)"),
+                QuizAnswer("C", "FV = PV / (1 + r)^n"),
+                QuizAnswer("D", "FV = PV + r * n")
+            ),
+            correctOption = "A",
+            explanation = "Công thức tính lãi kép chuẩn mực xác định: Giá trị tương lai FV bằng Giá trị hiện tại PV nhân với hệ số tích lũy (1 + r) lũy thừa n kỳ hạn gửi."
+        )
+    )
+
+    // Bộ câu hỏi cho môn Vi sinh học (id = "6")
+    private val biologyQuestions = listOf(
+        QuizQuestion(
+            id = "q6_1",
+            text = "Tế bào vi khuẩn có đặc điểm cấu tạo cơ bản nào khác biệt hoàn toàn với tế bào động vật?",
+            hint = "Gợi ý: Không có màng bao bọc vật chất di truyền.",
+            options = listOf(
+                QuizAnswer("A", "Không có màng tế bào bao quanh"),
+                QuizAnswer("B", "Chưa có nhân hoàn chỉnh (Nhân sơ - Prokaryote)"),
+                QuizAnswer("C", "Không có ribosome tổng hợp protein"),
+                QuizAnswer("D", "Kích thước khổng lồ dễ nhìn bằng mắt thường")
+            ),
+            correctOption = "B",
+            explanation = "Vi khuẩn là sinh vật nhân sơ, tế bào của chúng không có màng nhân bao bọc vật chất di truyền và thiếu các bào quan có màng ngăn."
+        ),
+        QuizQuestion(
+            id = "q6_2",
+            text = "Phương thức sinh sản chủ yếu và phổ biến nhất của hầu hết các loài vi khuẩn là gì?",
+            hint = "Gợi ý: Tự phân chia từ 1 thành 2 tế bào giống hệt nhau.",
+            options = listOf(
+                QuizAnswer("A", "Sinh sản hữu tính giao phối"),
+                QuizAnswer("B", "Trực phân phân đôi (Binary Fission)"),
+                QuizAnswer("C", "Nảy chồi sinh bào tử hữu tính"),
+                QuizAnswer("D", "Tiếp hợp chuyển gene")
+            ),
+            correctOption = "B",
+            explanation = "Vi khuẩn chủ yếu sinh sản vô tính bằng hình thức trực phân phân đôi: tế bào lớn lên, nhân đôi DNA và phân chia vách tế bào để tạo ra 2 tế bào con."
+        ),
+        QuizQuestion(
+            id = "q6_3",
+            text = "Virus được giới khoa học coi là dạng sống đặc biệt phi tế bào vì:",
+            hint = "Gợi ý: Ký sinh bắt buộc, không thể tự chuyển hóa vật chất độc lập.",
+            options = listOf(
+                QuizAnswer("A", "Không có cấu tạo tế bào và chỉ nhân lên khi ký sinh trong tế bào vật chủ"),
+                QuizAnswer("B", "Có kích thước khổng lồ hơn cả tế bào nấm men"),
+                QuizAnswer("C", "Có thể tự thực hiện quang hợp tạo ra tinh bột"),
+                QuizAnswer("D", "Sở hữu hệ thống ribosome dịch mã vô cùng phức tạp")
+            ),
+            correctOption = "A",
+            explanation = "Virus là thực thể phi tế bào cực nhỏ, chỉ gồm vỏ protein và lõi acid nucleic. Chúng không có trao đổi chất độc lập và bắt buộc phải ký sinh trong tế bào sinh vật chủ để nhân bản."
+        ),
+        QuizQuestion(
+            id = "q6_4",
+            text = "Trong hệ sinh thái, vai trò quan trọng nhất của vi sinh vật hoại sinh phân hủy là gì?",
+            hint = "Gợi ý: Chuyển xác động thực vật chết thành muối vô cơ trả lại cho đất.",
+            options = listOf(
+                QuizAnswer("A", "Giải phóng khí oxy qua quang hợp đại dương"),
+                QuizAnswer("B", "Phân giải chất hữu cơ phức tạp thành chất vô cơ nuôi cây"),
+                QuizAnswer("C", "Tấn công và tiêu diệt các sinh vật tiêu thụ lớn"),
+                QuizAnswer("D", "Cố định năng lượng mặt trời thành tinh bột")
+            ),
+            correctOption = "B",
+            explanation = "Vi sinh vật phân hủy đóng vai trò khép kín chu trình vật chất: phân hủy xác động thực vật hữu cơ thành muối khoáng vô cơ cho thực vật tái hấp thu."
+        ),
+        QuizQuestion(
+            id = "q6_5",
+            text = "Thuốc kháng sinh (Antibiotics) thông thường có tác dụng tiêu diệt hoặc ức chế chọn lọc đối với nhóm vi sinh vật nào?",
+            hint = "Gợi ý: KHÔNG có tác dụng đối với bệnh do virus gây ra.",
+            options = listOf(
+                QuizAnswer("A", "Vi khuẩn (Bacteria)"),
+                QuizAnswer("B", "Virus"),
+                QuizAnswer("C", "Động vật nguyên sinh ký sinh"),
+                QuizAnswer("D", "Tất cả các loài côn trùng gây hại")
+            ),
+            correctOption = "A",
+            explanation = "Kháng sinh là những chất có khả năng tiêu diệt hoặc ức chế đặc hiệu sự phát triển của vi khuẩn bằng cách phá hủy vách tế bào hoặc ức chế tổng hợp protein của chúng. Kháng sinh hoàn toàn vô tác dụng với virus."
+        )
+    )
+
     init {
         // Tải danh sách bộ đề ban đầu
+        allQuizSetsList.addAll(allMockQuizSets)
         _uiState.update {
             it.copy(
-                quizSets = allMockQuizSets,
+                quizSets = allQuizSetsList,
                 leaderboard = mockLeaderboard
             )
         }
         loadAvailableDocuments()
+        loadQuizSets()
+        loadLeaderboard()
     }
 
     fun loadAvailableDocuments() {
@@ -206,12 +495,133 @@ class QuizViewModel @Inject constructor(
             )
             _availableDocs.value = baselineMockDocs
             
-            authRepository.getDocuments().onSuccess { firestoreDocs ->
+            documentRepository.getDocuments().onSuccess { firestoreDocs ->
                 val combined = baselineMockDocs.toMutableList()
                 val existingIds = baselineMockDocs.map { it.id }.toSet()
                 val uniqueFirestoreDocs = firestoreDocs.filter { it.id !in existingIds }
                 combined.addAll(uniqueFirestoreDocs)
                 _availableDocs.value = combined
+            }
+        }
+    }
+
+    fun loadQuizSets() {
+        viewModelScope.launch {
+            authRepository.getQuizSets().onSuccess { firestoreSets ->
+                val localAiSets = allQuizSetsList.filter { it.id.startsWith("ai_") }
+                allQuizSetsList.clear()
+                allQuizSetsList.addAll(localAiSets)
+                
+                val existingIds = allMockQuizSets.map { it.id }.toSet()
+                val uniqueFirestoreSets = firestoreSets.filter { it.id !in existingIds }
+                allQuizSetsList.addAll(uniqueFirestoreSets)
+                allQuizSetsList.addAll(allMockQuizSets)
+                
+                _uiState.update { state ->
+                    val filtered = if (state.selectedSubject == "Tất cả") {
+                        allQuizSetsList
+                    } else {
+                        allQuizSetsList.filter { it.subject.contains(state.selectedSubject, ignoreCase = true) }
+                    }
+                    state.copy(quizSets = filtered)
+                }
+            }.onFailure {
+                val localAiSets = allQuizSetsList.filter { it.id.startsWith("ai_") }
+                allQuizSetsList.clear()
+                allQuizSetsList.addAll(localAiSets)
+                allQuizSetsList.addAll(allMockQuizSets)
+                
+                _uiState.update { state ->
+                    val filtered = if (state.selectedSubject == "Tất cả") {
+                        allQuizSetsList
+                    } else {
+                        allQuizSetsList.filter { it.subject.contains(state.selectedSubject, ignoreCase = true) }
+                    }
+                    state.copy(quizSets = filtered)
+                }
+            }
+        }
+    }
+
+    fun loadLeaderboard() {
+        viewModelScope.launch {
+            try {
+                // 1. Lấy thông tin user hiện tại
+                val currentUserResult = authRepository.getCurrentUser()
+                val currentUser = currentUserResult.getOrNull()
+
+                // 2. Lấy toàn bộ users từ Firestore
+                val allUsersResult = authRepository.getAllUsers()
+                val allUsers = allUsersResult.getOrElse { emptyList() }
+
+                // 3. Map Firestore users sang LeaderboardUser
+                val realLeaderboardUsers = allUsers.map { u ->
+                    // Công thức tính điểm: score = credits * 1000 + uploads * 500
+                    val score = u.documentCredits * 1000 + u.uploadCount * 500
+                    
+                    val isMe = currentUser != null && u.uid == currentUser.uid
+                    val displayName = if (isMe) {
+                        if (u.fullName.isNotEmpty()) "${u.fullName} (Tôi)" else "Gamer (Tôi)"
+                    } else {
+                        if (u.fullName.isNotEmpty()) u.fullName else "Học viên ẩn danh"
+                    }
+                    
+                    val universityName = if (u.university.isNotEmpty()) u.university else "Đại học đối tác"
+                    
+                    LeaderboardUser(
+                        rank = 0, // rank sẽ tính động sau khi sort
+                        name = displayName,
+                        university = universityName,
+                        score = score,
+                        isMe = isMe
+                    )
+                }
+
+                // 4. Các đối thủ mẫu (competitors) để tạo không khí cạnh tranh
+                val mockCompetitors = listOf(
+                    LeaderboardUser(0, "Nguyễn Văn Anh", "Đại học Bách Khoa", 12450),
+                    LeaderboardUser(0, "Trần Thị Bình", "Đại học Kinh tế Quốc dân", 11200),
+                    LeaderboardUser(0, "Lê Hoàng Cường", "Đại học Ngoại thương", 9850),
+                    LeaderboardUser(0, "Phạm Minh Đức", "Đại học FPT", 9100),
+                    LeaderboardUser(0, "Đỗ Thanh Hải", "Đại học Quốc gia", 8600)
+                )
+
+                // Lọc bỏ những competitor mock bị trùng tên thật của user
+                val realNames = realLeaderboardUsers.map { it.name.replace(" (Tôi)", "") }.toSet()
+                val filteredMockCompetitors = mockCompetitors.filter { mockUser ->
+                    mockUser.name !in realNames
+                }
+
+                // Kết hợp real users và mock competitors
+                val combinedList = realLeaderboardUsers.toMutableList()
+                
+                // Chèn thêm competitor mock sao cho tối thiểu có 6 dòng trên bảng xếp hạng
+                for (competitor in filteredMockCompetitors) {
+                    if (combinedList.size >= 6) break
+                    combinedList.add(competitor)
+                }
+                
+                // Nếu sau khi chèn vẫn chưa đủ 6 dòng, chèn thêm các mock còn lại
+                if (combinedList.size < 6) {
+                    for (competitor in filteredMockCompetitors) {
+                        if (combinedList.any { it.name == competitor.name }) continue
+                        combinedList.add(competitor)
+                    }
+                }
+
+                // 5. Sắp xếp giảm dần theo điểm số score
+                val sortedList = combinedList.sortedByDescending { it.score }
+
+                // 6. Gán thứ hạng rank động từ 1 trở đi
+                val finalLeaderboard = sortedList.mapIndexed { index, user ->
+                    user.copy(rank = index + 1)
+                }
+
+                // 7. Cập nhật state
+                _uiState.update { it.copy(leaderboard = finalLeaderboard) }
+            } catch (e: Exception) {
+                // Fail-safe fallback sang mockLeaderboard tĩnh khi xảy ra lỗi
+                _uiState.update { it.copy(leaderboard = mockLeaderboard) }
             }
         }
     }
@@ -225,9 +635,9 @@ class QuizViewModel @Inject constructor(
     fun onSubjectSelected(subject: String) {
         _uiState.update { state ->
             val filtered = if (subject == "Tất cả") {
-                allMockQuizSets
+                allQuizSetsList
             } else {
-                allMockQuizSets.filter { it.subject.contains(subject, ignoreCase = true) }
+                allQuizSetsList.filter { it.subject.contains(subject, ignoreCase = true) }
             }
             state.copy(
                 selectedSubject = subject,
@@ -236,43 +646,144 @@ class QuizViewModel @Inject constructor(
         }
     }
 
+    private var lastAiCallTime: Long = 0
+
+    /**
+     * Tự động sinh đề thi trắc nghiệm học thuật bằng Gemini AI và bắt đầu làm bài.
+     */
+    fun generateAndStartQuiz(
+        docTitle: String,
+        count: Int,
+        difficulty: Difficulty,
+        format: String = "Trắc nghiệm",
+        docContent: String,
+        onError: (String) -> Unit
+    ) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastAiCallTime < 60000) {
+            val remainSeconds = 60 - (currentTime - lastAiCallTime) / 1000
+            onError("Bạn thao tác quá nhanh. Vui lòng đợi trong $remainSeconds giây để tránh spam API.")
+            return
+        }
+
+        _uiState.update { it.copy(isLoading = true) }
+        viewModelScope.launch {
+            val contentToUse = if (docContent.trim().isNotEmpty()) docContent else {
+                "Tài liệu môn học $docTitle ôn tập học thuật đại cương và chuyên ngành."
+            }
+
+            aiRepository.generateQuizFromDocument(
+                title = docTitle,
+                type = "Tài liệu ôn tập",
+                content = contentToUse,
+                count = count,
+                format = format
+            ).onSuccess { generatedQuestions ->
+                lastAiCallTime = System.currentTimeMillis()
+                
+                // Sinh thông báo sự kiện tạo Quiz AI thành công thực tế lưu vào Firestore
+                viewModelScope.launch {
+                    authRepository.getCurrentUser().onSuccess { user ->
+                        if (user != null) {
+                            notificationRepository.addNotification(
+                                userId = user.uid,
+                                title = "🧩 Đề ôn tập AI",
+                                content = "EduVault vừa hoàn tất thiết kế bộ đề ôn tập $format gồm $count câu hỏi cho môn học '${docTitle}'!",
+                                type = NotificationType.AI
+                            )
+                        }
+                    }
+                }
+
+                val customSet = QuizSet(
+                    id = "ai_${System.currentTimeMillis()}",
+                    subject = docTitle,
+                    title = "Quiz AI ($format): $docTitle",
+                    difficulty = difficulty,
+                    questionCount = count,
+                    playCount = "1",
+                    isNew = true,
+                    bgIndex = (Math.abs(docTitle.hashCode()) % 6)
+                )
+
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        screenMode = QuizScreenMode.PLAYER,
+                        activeQuizSet = customSet,
+                        questions = generatedQuestions,
+                        currentQuestionIndex = 0,
+                        selectedOption = null,
+                        isAnswerLocked = false,
+                        remainingSeconds = 60,
+                        answersMap = emptyMap(),
+                        correctAnswersCount = 0,
+                        timeSpentSeconds = 0,
+                        xpEarned = 0,
+                        quizFormat = format
+                    )
+                }
+
+                // Thêm vào danh sách chơi lại và lưu cache tạm thời của phiên
+                localQuestionsCache[customSet.id] = generatedQuestions
+                allQuizSetsList.add(0, customSet)
+                _uiState.update { state -> state.copy(quizSets = allQuizSetsList.toList()) }
+
+                startTimer()
+            }.onFailure { e ->
+                _uiState.update { it.copy(isLoading = false) }
+                onError(e.localizedMessage ?: "Quá trình tạo đề thi AI gặp sự cố định dạng. Vui lòng bấm thử lại.")
+            }
+        }
+    }
+
     /**
      * Bắt đầu chơi bộ đề trắc nghiệm
      */
     fun startQuiz(quizSet: QuizSet) {
-        // Tải câu hỏi tùy thuộc vào bộ đề đã chọn
-        val rawQuestions = when {
-            quizSet.subject.contains("Marketing", ignoreCase = true) || quizSet.id == "2" -> marketingQuestions
-            else -> microQuestions // mặc định dùng bộ câu hỏi Kinh tế vi mô chất lượng cao
-        }
+        _uiState.update { it.copy(isLoading = true) }
+        
+        viewModelScope.launch {
+            val fetchedQuestions = localQuestionsCache[quizSet.id] ?: authRepository.getQuizQuestions(quizSet.id).getOrElse {
+                val rawMocks = when {
+                    quizSet.subject.contains("Marketing", ignoreCase = true) || quizSet.id == "2" -> marketingQuestions
+                    quizSet.subject.contains("Thống kê", ignoreCase = true) || quizSet.id == "3" -> statisticsQuestions
+                    quizSet.subject.contains("Luật", ignoreCase = true) || quizSet.id == "4" -> lawQuestions
+                    quizSet.subject.contains("Tài chính", ignoreCase = true) || quizSet.id == "5" -> financeQuestions
+                    quizSet.subject.contains("Vi sinh", ignoreCase = true) || quizSet.id == "6" -> biologyQuestions
+                    else -> microQuestions
+                }
+                rawMocks
+            }
 
-        // Tạo danh sách câu hỏi có số lượng chính xác như yêu cầu bằng cách lặp lại/cắt lát câu hỏi gốc
-        val finalQuestions = mutableListOf<QuizQuestion>()
-        val count = quizSet.questionCount
-        while (finalQuestions.size < count && rawQuestions.isNotEmpty()) {
-            val remaining = count - finalQuestions.size
-            finalQuestions.addAll(rawQuestions.take(remaining).mapIndexed { idx, q ->
-                q.copy(id = "${q.id}_custom_${finalQuestions.size + idx}")
-            })
-        }
+            val finalQuestions = mutableListOf<QuizQuestion>()
+            val count = quizSet.questionCount
+            while (finalQuestions.size < count && fetchedQuestions.isNotEmpty()) {
+                val remaining = count - finalQuestions.size
+                finalQuestions.addAll(fetchedQuestions.take(remaining).mapIndexed { idx, q ->
+                    q.copy(id = "${q.id}_custom_${finalQuestions.size + idx}")
+                })
+            }
 
-        _uiState.update {
-            it.copy(
-                screenMode = QuizScreenMode.PLAYER,
-                activeQuizSet = quizSet,
-                questions = finalQuestions,
-                currentQuestionIndex = 0,
-                selectedOption = null,
-                isAnswerLocked = false,
-                remainingSeconds = 60,
-                answersMap = emptyMap(),
-                correctAnswersCount = 0,
-                timeSpentSeconds = 0,
-                xpEarned = 0
-            )
-        }
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    screenMode = QuizScreenMode.PLAYER,
+                    activeQuizSet = quizSet,
+                    questions = finalQuestions,
+                    currentQuestionIndex = 0,
+                    selectedOption = null,
+                    isAnswerLocked = false,
+                    remainingSeconds = 60,
+                    answersMap = emptyMap(),
+                    correctAnswersCount = 0,
+                    timeSpentSeconds = 0,
+                    xpEarned = 0
+                )
+            }
 
-        startTimer()
+            startTimer()
+        }
     }
 
     /**
@@ -332,6 +843,17 @@ class QuizViewModel @Inject constructor(
                     xpEarned = if (it.correctAnswersCount == it.questions.size) it.xpEarned + 50 else it.xpEarned
                 )
             }
+
+            // TỰ ĐỘNG GHI NHẬN THÀNH TÍCH ĐIỂM THI ĐUA VÀ XP VÀO FIRESTORE AN TOÀN QUA TRANSACTION
+            viewModelScope.launch {
+                val questionsSize = _uiState.value.questions.size
+                if (questionsSize > 0) {
+                    val correctCount = _uiState.value.correctAnswersCount
+                    val score10 = (correctCount.toFloat() / questionsSize) * 10f
+                    val earnedXp = _uiState.value.xpEarned
+                    authRepository.updateUserQuizStats(score10, earnedXp)
+                }
+            }
         }
     }
 
@@ -390,6 +912,7 @@ class QuizViewModel @Inject constructor(
                 xpEarned = 0
             )
         }
+        loadLeaderboard()
     }
 
     // ─── Timer Logic ──────────────────────────────────────────────────────────

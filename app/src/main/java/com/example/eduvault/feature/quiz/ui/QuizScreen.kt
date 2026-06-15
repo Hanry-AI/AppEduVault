@@ -42,7 +42,7 @@ import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.School
-import androidx.compose.material.icons.outlined.TrendingUp
+import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -73,7 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.eduvault.core.theme.ColorAmber
 import com.example.eduvault.core.theme.ColorAmberDark
 import com.example.eduvault.core.theme.ColorAmberLight
@@ -200,7 +200,7 @@ private fun QuizDashboard(
                     rowItems.forEach { quizSet ->
                         QuizSetCard(
                             quizSet = quizSet,
-                            onPlayClick = { onStartQuizSetup(quizSet.title) },
+                            onPlayClick = { viewModel.startQuiz(quizSet) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -385,7 +385,7 @@ private fun ProgressCard(
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.TrendingUp,
+                        imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
                         contentDescription = null,
                         tint = trendColor,
                         modifier = Modifier.size(10.dp)
@@ -835,6 +835,7 @@ private fun QuizPlayer(
             currentIndex = uiState.currentQuestionIndex,
             totalCount = totalQuestions,
             remainingSeconds = uiState.remainingSeconds,
+            quizFormat = uiState.quizFormat,
             onExitClick = viewModel::exitQuiz
         )
 
@@ -853,25 +854,85 @@ private fun QuizPlayer(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
-                    Text(
-                        text = "CÂU HỎI ${uiState.currentQuestionIndex + 1} CỦA $totalQuestions",
-                        fontFamily = JetBrainsMonoFamily,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = ColorAmberDark,
-                        letterSpacing = 1.sp
-                    )
+                    // Header row: câu số + format badge
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "CÂU HỎI ${uiState.currentQuestionIndex + 1} CỦA $totalQuestions",
+                            fontFamily = JetBrainsMonoFamily,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ColorAmberDark,
+                            letterSpacing = 1.sp
+                        )
+                        // Badge hình thức câu hỏi (chỉ hiển thị khi không phải Trắc nghiệm)
+                        if (uiState.quizFormat != "Trắc nghiệm") {
+                            val (badgeLabel, badgeBg, badgeFg) = when (uiState.quizFormat) {
+                                "Đúng / Sai" -> Triple("✔ Đ/S", Color(0xFFE8F5E9), ColorForest)
+                                "Điền khuyết" -> Triple("✏ Điền", ColorAmber.copy(alpha = 0.15f), ColorAmberDark)
+                                else -> Triple(uiState.quizFormat, ColorCream, ColorInk)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .background(badgeBg)
+                                    .border(1.dp, badgeFg.copy(alpha = 0.4f), RoundedCornerShape(5.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = badgeLabel,
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 8.5.sp,
+                                    color = badgeFg
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Text(
-                        text = currentQuestion.text,
-                        fontFamily = DmSansFamily,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = ColorInk,
-                        lineHeight = 22.sp
-                    )
+                    // Hiển thị text câu hỏi: highlight ___ với màu Amber cho Điền khuyết
+                    val questionText = currentQuestion.text
+                    if (questionText.contains("___")) {
+                        val annotated = buildAnnotatedString {
+                            val parts = questionText.split("___")
+                            parts.forEachIndexed { i, part ->
+                                append(part)
+                                if (i < parts.size - 1) {
+                                    withStyle(
+                                        style = SpanStyle(
+                                            color = ColorAmberDark,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            background = ColorAmber.copy(alpha = 0.18f)
+                                        )
+                                    ) {
+                                        append("  ▢ điền vào đây  ")
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            text = annotated,
+                            fontFamily = DmSansFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = ColorInk,
+                            lineHeight = 24.sp
+                        )
+                    } else {
+                        Text(
+                            text = questionText,
+                            fontFamily = DmSansFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = ColorInk,
+                            lineHeight = 22.sp
+                        )
+                    }
 
                     if (currentQuestion.hint.isNotEmpty() && !uiState.isAnswerLocked) {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -936,6 +997,7 @@ private fun QuizPlayerHeader(
     currentIndex: Int,
     totalCount: Int,
     remainingSeconds: Int,
+    quizFormat: String = "Trắc nghiệm",
     onExitClick: () -> Unit
 ) {
     val progress = (currentIndex + 1).toFloat() / totalCount
@@ -1314,7 +1376,7 @@ private fun QuizResults(
     // Formatting total minutes and seconds
     val minutes = uiState.timeSpentSeconds / 60
     val seconds = uiState.timeSpentSeconds % 60
-    val timeLabel = String.format("%02d:%02d", minutes, seconds)
+    val timeLabel = String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
 
     val scrollState = rememberScrollState()
 
@@ -1363,6 +1425,31 @@ private fun QuizResults(
                     color = ColorTextOnLightSecondary,
                     textAlign = TextAlign.Center
                 )
+
+                // Hiển thị hình thức bài kiểm tra
+                if (uiState.quizFormat != "Trắc nghiệm") {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    val (fmtLabel, fmtBg, fmtFg) = when (uiState.quizFormat) {
+                        "Đúng / Sai" -> Triple("✔  Bài kiểm tra Đúng / Sai", Color(0xFFE8F5E9), ColorForest)
+                        "Điền khuyết" -> Triple("✏  Bài kiểm tra Điền khuyết", ColorAmber.copy(alpha = 0.15f), ColorAmberDark)
+                        else -> Triple(uiState.quizFormat, ColorCream, ColorInk)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(fmtBg)
+                            .border(1.dp, fmtFg.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = fmtLabel,
+                            fontFamily = JetBrainsMonoFamily,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 10.sp,
+                            color = fmtFg
+                        )
+                    }
+                }
             }
         }
 

@@ -18,4 +18,8 @@ data class ResetPasswordUiState(
      * Chỉ hiển thị lỗi SAU KHI người dùng đã bấm nút ít nhất 1 lần.
      */
     val hasAttemptedReset: Boolean = false,
+
+    // ─── Luồng Firebase Thật / Demo ──────────────────────────────────────────
+    val isDemoMode: Boolean = true,
+    val oobCode: String? = null,
 )

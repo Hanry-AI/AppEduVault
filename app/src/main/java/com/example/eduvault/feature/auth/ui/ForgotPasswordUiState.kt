@@ -13,6 +13,12 @@ data class ForgotPasswordUiState(
     val otp: String = "",
     val otpError: String? = null,
 
+    // ─── Luồng Xác thực Link Thật Firebase ───────────────────────────────────────
+    val linkInput: String = "",
+    val isRealLinkValid: Boolean = false,
+    val verifiedEmail: String? = null,
+    val oobCode: String? = null,
+
     // ─── Trạng thái bước hiện tại ───────────────────────────────────────────────
     /** false = đang ở bước nhập email | true = đã gửi OTP, đang chờ xác nhận */
     val isOtpSent: Boolean = false,

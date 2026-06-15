@@ -32,6 +32,17 @@ interface AuthRepository {
     suspend fun sendPasswordResetEmail(email: String): Result<Unit>
 
     /**
+     * Xác thực mã đặt lại mật khẩu (oobCode) từ Firebase Auth email link.
+     * @return [Result.success] với email của tài khoản tương ứng nếu mã hợp lệ, [Result.failure] nếu mã sai hoặc hết hạn.
+     */
+    suspend fun verifyPasswordResetCode(code: String): Result<String>
+
+    /**
+     * Đặt lại mật khẩu mới sử dụng mã xác thực oobCode đã được phê duyệt.
+     */
+    suspend fun confirmPasswordReset(oobCode: String, newPassword: String): Result<Unit>
+
+    /**
      * Lấy thông tin người dùng hiện tại từ Firestore (nếu đã đăng nhập).
      * @return [Result.success] với [User] hoặc null nếu chưa đăng nhập.
      */
@@ -53,23 +64,44 @@ interface AuthRepository {
     suspend fun consumeCredit(): Result<User>
 
     /**
-     * Đăng tải tài liệu mới của người dùng lên hệ thống.
+     * Mở khóa tài liệu bằng 1 Credit.
      */
-    suspend fun uploadUserDocument(
-        title: String,
-        subjectCode: String,
-        docType: String,
-        fileUri: String
-    ): Result<Unit>
+    suspend fun unlockDocument(docId: String): Result<User>
 
     /**
-     * Lấy danh sách tài liệu từ Firestore.
+     * Lấy danh sách bộ đề từ collection "quizzes" trên Firestore.
      */
-    suspend fun getDocuments(): Result<List<com.example.eduvault.feature.library.ui.LibraryDoc>>
+    suspend fun getQuizSets(): Result<List<com.example.eduvault.feature.quiz.ui.QuizSet>>
+
+    /**
+     * Lấy danh sách câu hỏi chi tiết của đề từ Firestore.
+     */
+    suspend fun getQuizQuestions(quizId: String): Result<List<com.example.eduvault.feature.quiz.ui.QuizQuestion>>
+
+    /**
+     * Lấy toàn bộ danh sách người dùng từ Firestore để tính điểm bảng xếp hạng.
+     */
+    suspend fun getAllUsers(): Result<List<User>>
+
+    /**
+     * Cập nhật chỉ số thi đua trắc nghiệm và điểm XP của người dùng lên Firestore bằng Transaction an toàn.
+     */
+    suspend fun updateUserQuizStats(score: Float, xpEarned: Int): Result<User>
+
+    /**
+     * Lưu hoặc bỏ lưu tài liệu (toggle bookmark) đồng bộ trực tiếp lên Firestore.
+     */
+    suspend fun toggleSaveDocument(docId: String): Result<User>
+
+    /**
+     * Xác thực với Firebase Authentication bằng Google ID Token và đồng bộ hóa Firestore.
+     */
+    suspend fun loginWithGoogle(idToken: String): Result<User>
 
     /**
      * Đăng xuất.
      */
     fun logout()
 }
+
 

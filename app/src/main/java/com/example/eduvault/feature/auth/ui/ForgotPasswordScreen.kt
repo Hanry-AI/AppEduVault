@@ -111,7 +111,7 @@ private val FP_SPLIT_BREAKPOINT = 600.dp
 @Composable
 fun ForgotPasswordScreen(
     onNavigateBack: () -> Unit = {},
-    onNavigateToResetPassword: () -> Unit = {},
+    onNavigateToResetPassword: (String?) -> Unit = {},
     viewModel: ForgotPasswordViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -119,7 +119,7 @@ fun ForgotPasswordScreen(
 
     // Điều hướng sang ResetPassword khi xác thực OTP thành công
     LaunchedEffect(uiState.isVerifySuccess) {
-        if (uiState.isVerifySuccess) onNavigateToResetPassword()
+        if (uiState.isVerifySuccess) onNavigateToResetPassword(uiState.oobCode)
     }
 
     // Hiện snackbar khi có lỗi
@@ -140,6 +140,7 @@ fun ForgotPasswordScreen(
                     uiState = uiState,
                     onEmailChange = viewModel::onEmailChange,
                     onOtpChange = viewModel::onOtpChange,
+                    onLinkInputChange = viewModel::onLinkInputChange,
                     onSendOtpClick = viewModel::onSendOtpClick,
                     onVerifyOtpClick = viewModel::onVerifyOtpClick,
                     onResendOtpClick = viewModel::onResendOtpClick,
@@ -151,6 +152,7 @@ fun ForgotPasswordScreen(
                     uiState = uiState,
                     onEmailChange = viewModel::onEmailChange,
                     onOtpChange = viewModel::onOtpChange,
+                    onLinkInputChange = viewModel::onLinkInputChange,
                     onSendOtpClick = viewModel::onSendOtpClick,
                     onVerifyOtpClick = viewModel::onVerifyOtpClick,
                     onResendOtpClick = viewModel::onResendOtpClick,
@@ -171,6 +173,7 @@ private fun ForgotPasswordPhoneLayout(
     uiState: ForgotPasswordUiState,
     onEmailChange: (String) -> Unit,
     onOtpChange: (String) -> Unit,
+    onLinkInputChange: (String) -> Unit,
     onSendOtpClick: () -> Unit,
     onVerifyOtpClick: () -> Unit,
     onResendOtpClick: () -> Unit,
@@ -323,6 +326,7 @@ private fun ForgotPasswordPhoneLayout(
                 uiState = uiState,
                 onEmailChange = onEmailChange,
                 onOtpChange = onOtpChange,
+                onLinkInputChange = onLinkInputChange,
                 onSendOtpClick = onSendOtpClick,
                 onVerifyOtpClick = onVerifyOtpClick,
                 onResendOtpClick = onResendOtpClick,
@@ -341,6 +345,7 @@ private fun ForgotPasswordTabletLayout(
     uiState: ForgotPasswordUiState,
     onEmailChange: (String) -> Unit,
     onOtpChange: (String) -> Unit,
+    onLinkInputChange: (String) -> Unit,
     onSendOtpClick: () -> Unit,
     onVerifyOtpClick: () -> Unit,
     onResendOtpClick: () -> Unit,
@@ -368,6 +373,7 @@ private fun ForgotPasswordTabletLayout(
                 uiState = uiState,
                 onEmailChange = onEmailChange,
                 onOtpChange = onOtpChange,
+                onLinkInputChange = onLinkInputChange,
                 onSendOtpClick = onSendOtpClick,
                 onVerifyOtpClick = onVerifyOtpClick,
                 onResendOtpClick = onResendOtpClick,
@@ -638,6 +644,7 @@ private fun ForgotPasswordFormPanel(
     uiState: ForgotPasswordUiState,
     onEmailChange: (String) -> Unit,
     onOtpChange: (String) -> Unit,
+    onLinkInputChange: (String) -> Unit,
     onSendOtpClick: () -> Unit,
     onVerifyOtpClick: () -> Unit,
     onResendOtpClick: () -> Unit,
@@ -678,6 +685,7 @@ private fun ForgotPasswordFormPanel(
                 OtpStepContent(
                     uiState = uiState,
                     onOtpChange = onOtpChange,
+                    onLinkInputChange = onLinkInputChange,
                     onVerifyOtpClick = onVerifyOtpClick,
                     onResendOtpClick = onResendOtpClick,
                     titleFontSize = titleFontSize,
@@ -835,6 +843,7 @@ private fun EmailStepContent(
 private fun OtpStepContent(
     uiState: ForgotPasswordUiState,
     onOtpChange: (String) -> Unit,
+    onLinkInputChange: (String) -> Unit,
     onVerifyOtpClick: () -> Unit,
     onResendOtpClick: () -> Unit,
     titleFontSize: androidx.compose.ui.unit.TextUnit,
@@ -889,7 +898,7 @@ private fun OtpStepContent(
         AuthTextField(
             value = uiState.otp,
             onValueChange = onOtpChange,
-            label = "Mã OTP (6 chữ số)",
+            label = "Mã OTP (Chế độ Demo: nhập 6 số bất kỳ)",
             placeholder = "••••••",
             leadingIcon = {
                 Icon(
@@ -908,9 +917,68 @@ private fun OtpStepContent(
                     onVerifyOtpClick()
                 }
             ),
-            isError = uiState.hasAttemptedVerify && uiState.otpError != null,
+            isError = uiState.hasAttemptedVerify && uiState.otpError != null && !uiState.isRealLinkValid,
             errorMessage = uiState.otpError,
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ── Chia cách ─────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(ColorBorder.copy(alpha = 0.5f)))
+            Text(
+                text = " HOẶC DÁN LINK EMAIL THẬT ",
+                fontFamily = JetBrainsMonoFamily,
+                fontSize = 9.sp,
+                color = ColorTextOnLightSecondary,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(ColorBorder.copy(alpha = 0.5f)))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // ── Ô dán Link thật ────────────────────────────────────────────────
+        AuthTextField(
+            value = uiState.linkInput,
+            onValueChange = onLinkInputChange,
+            label = "Liên kết đặt lại mật khẩu (Firebase Reset Link)",
+            placeholder = "Dán liên kết khôi phục từ Email để đặt lại thật...",
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Outlined.Email,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+            },
+            isError = uiState.linkInput.isNotEmpty() && !uiState.isRealLinkValid,
+            errorMessage = if (uiState.linkInput.isNotEmpty() && !uiState.isRealLinkValid) "Liên kết khôi phục không hợp lệ hoặc đã hết hạn" else null
+        )
+
+        // Hiển thị Badge thông báo Email khôi phục hợp lệ
+        if (uiState.isRealLinkValid && uiState.verifiedEmail != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(ColorForest.copy(alpha = 0.15f))
+                    .border(1.dp, ColorForest.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "✓ Mã khôi phục hợp lệ cho tài khoản: ${uiState.verifiedEmail}",
+                    fontFamily = DmSansFamily,
+                    fontSize = 11.sp,
+                    color = ColorForest,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -1095,6 +1163,7 @@ private fun ForgotPasswordEmailPreview() {
             uiState = ForgotPasswordUiState(),
             onEmailChange = {},
             onOtpChange = {},
+            onLinkInputChange = {},
             onSendOtpClick = {},
             onVerifyOtpClick = {},
             onResendOtpClick = {},
@@ -1116,6 +1185,7 @@ private fun ForgotPasswordOtpPreview() {
             ),
             onEmailChange = {},
             onOtpChange = {},
+            onLinkInputChange = {},
             onSendOtpClick = {},
             onVerifyOtpClick = {},
             onResendOtpClick = {},
@@ -1133,6 +1203,7 @@ private fun ForgotPasswordTabletPreview() {
             uiState = ForgotPasswordUiState(),
             onEmailChange = {},
             onOtpChange = {},
+            onLinkInputChange = {},
             onSendOtpClick = {},
             onVerifyOtpClick = {},
             onResendOtpClick = {},

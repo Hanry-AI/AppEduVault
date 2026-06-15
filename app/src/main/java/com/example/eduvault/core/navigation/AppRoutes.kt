@@ -10,4 +10,5 @@ object AppRoutes {
     const val HOME             = "home"
     const val FORGOT_PASSWORD  = "forgot_password"
     const val RESET_PASSWORD   = "reset_password"
+    const val ADMIN_DASHBOARD  = "admin_dashboard"
 }

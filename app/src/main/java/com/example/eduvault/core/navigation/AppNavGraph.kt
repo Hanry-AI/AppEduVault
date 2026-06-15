@@ -10,6 +10,7 @@ import com.example.eduvault.feature.auth.ui.LoginScreen
 import com.example.eduvault.feature.auth.ui.RegisterScreen
 import com.example.eduvault.feature.auth.ui.ResetPasswordScreen
 import com.example.eduvault.feature.home.ui.HomeScreen
+import com.example.eduvault.feature.profile.ui.AdminDashboardScreen
 
 /**
  * Nav graph chính của app.
@@ -62,8 +63,14 @@ fun AppNavGraph(
                 onNavigateBack = {
                     navController.popBackStack()
                 },
-                onNavigateToResetPassword = {
-                    navController.navigate(AppRoutes.RESET_PASSWORD) {
+                onNavigateToResetPassword = { oobCode ->
+                    val route = if (oobCode != null) {
+                        val encodedCode = android.net.Uri.encode(oobCode)
+                        "${AppRoutes.RESET_PASSWORD}?oobCode=$encodedCode"
+                    } else {
+                        AppRoutes.RESET_PASSWORD
+                    }
+                    navController.navigate(route) {
                         // Xóa màn hình ForgotPassword khỏi back stack khi sang ResetPassword
                         popUpTo(AppRoutes.FORGOT_PASSWORD) { inclusive = true }
                     }
@@ -72,7 +79,16 @@ fun AppNavGraph(
         }
 
         // ── Đặt lại mật khẩu ───────────────────────────────────────────────
-        composable(route = AppRoutes.RESET_PASSWORD) {
+        composable(
+            route = "${AppRoutes.RESET_PASSWORD}?oobCode={oobCode}",
+            arguments = listOf(
+                androidx.navigation.navArgument("oobCode") {
+                    type = androidx.navigation.NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) {
             ResetPasswordScreen(
                 onNavigateBack = {
                     navController.popBackStack()
@@ -93,6 +109,24 @@ fun AppNavGraph(
                     navController.navigate(AppRoutes.LOGIN) {
                         popUpTo(AppRoutes.HOME) { inclusive = true }
                     }
+                },
+                onNavigateToAdmin = {
+                    navController.navigate(AppRoutes.ADMIN_DASHBOARD)
+                },
+                onNavigateToLogin = {
+                    navController.navigate(AppRoutes.LOGIN)
+                },
+                onNavigateToRegister = {
+                    navController.navigate(AppRoutes.REGISTER)
+                }
+            )
+        }
+
+        // ── Admin Dashboard ──────────────────────────────────────────────────
+        composable(route = AppRoutes.ADMIN_DASHBOARD) {
+            AdminDashboardScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }

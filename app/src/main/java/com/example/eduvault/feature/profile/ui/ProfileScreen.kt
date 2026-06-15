@@ -33,19 +33,24 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.ExitToApp
-import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.ExitToApp
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -73,7 +78,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.example.eduvault.domain.model.AuthState
 import com.example.eduvault.core.theme.ColorAmber
 import com.example.eduvault.core.theme.ColorAmberDark
 import com.example.eduvault.core.theme.ColorAmberLight
@@ -97,11 +103,25 @@ import java.io.File
 fun ProfileContent(
     paddingValues: PaddingValues,
     onLogout: () -> Unit,
+    onNavigateToAdmin: () -> Unit = {},
+    onNavigateToLogin: () -> Unit = {},
+    onNavigateToRegister: () -> Unit = {},
     viewModel: ProfileViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val scrollState = rememberScrollState()
 
+    // Nếu là Guest — hiển thị màn hình chưa đăng nhập
+    if (uiState.authState is AuthState.Guest) {
+        GuestProfileScreen(
+            paddingValues = paddingValues,
+            onNavigateToLogin = onNavigateToLogin,
+            onNavigateToRegister = onNavigateToRegister
+        )
+        return
+    }
+
+    // Đã đăng nhập — hiển thị profile bình thường
+    val scrollState = rememberScrollState()
     var showLogoutDialog by remember { mutableStateOf(false) }
 
     Box(
@@ -161,7 +181,9 @@ fun ProfileContent(
                     // ─── VIEW MODE ───
                     ProfileViewDetails(
                         uiState = uiState,
-                        onLogoutClick = { showLogoutDialog = true }
+                        onLogoutClick = { showLogoutDialog = true },
+                        onNavigateToAdmin = onNavigateToAdmin,
+                        onEditClick = viewModel::onStartEditing
                     )
                 }
             }
@@ -299,9 +321,39 @@ private fun ProfileHeaderSection(
                 )
             }
 
-            // University Badge (if present)
-            if (user.university.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // University Badge (if present)
+                if (user.university.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(ColorTextOnDark.copy(alpha = 0.08f))
+                            .border(1.dp, ColorTextOnDark.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.School,
+                            contentDescription = null,
+                            tint = ColorAmber,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Text(
+                            text = user.university,
+                            fontFamily = JetBrainsMonoFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = ColorAmber
+                        )
+                    }
+                }
+
+                // XP Badge (màu hổ phách rực rỡ)
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -311,14 +363,8 @@ private fun ProfileHeaderSection(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.School,
-                        contentDescription = null,
-                        tint = ColorAmber,
-                        modifier = Modifier.size(13.dp)
-                    )
                     Text(
-                        text = user.university,
+                        text = "🔥 ${user.totalXp} XP",
                         fontFamily = JetBrainsMonoFamily,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
@@ -435,7 +481,9 @@ fun ProfileAvatar(
 @Composable
 private fun ProfileViewDetails(
     uiState: ProfileUiState,
-    onLogoutClick: () -> Unit
+    onLogoutClick: () -> Unit,
+    onNavigateToAdmin: () -> Unit = {},
+    onEditClick: () -> Unit = {}
 ) {
     Column(modifier = Modifier.padding(16.dp)) {
         // Study Stats
@@ -454,9 +502,30 @@ private fun ProfileViewDetails(
                 .padding(bottom = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            StatCard(emoji = "🧩", value = "18", label = "Quiz đã luyện", modifier = Modifier.weight(1f))
-            StatCard(emoji = "📝", value = "42 tr", label = "Lưu trữ tài liệu", modifier = Modifier.weight(1f))
-            StatCard(emoji = "⭐", value = "8.5", label = "Điểm thi đua", modifier = Modifier.weight(1f))
+            StatCard(
+                emoji = "🧩", 
+                value = "${uiState.user?.quizCount ?: 0}", 
+                label = "Quiz đã luyện", 
+                modifier = Modifier.weight(1f)
+            )
+            StatCard(
+                emoji = "📝", 
+                value = "${uiState.user?.uploadCount ?: 0} tài liệu", 
+                label = "Tài liệu đã tải lên", 
+                modifier = Modifier.weight(1f)
+            )
+            val avgScore = uiState.user?.quizAverageScore ?: 0.0f
+            val scoreText = if (uiState.user != null && uiState.user.quizCount > 0) {
+                String.format(java.util.Locale.US, "%.1f", avgScore)
+            } else {
+                "0.0"
+            }
+            StatCard(
+                emoji = "⭐", 
+                value = scoreText, 
+                label = "Điểm thi đua", 
+                modifier = Modifier.weight(1f)
+            )
         }
 
         // Settings list
@@ -476,9 +545,139 @@ private fun ProfileViewDetails(
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column {
-                MenuSettingsItem(icon = Icons.Outlined.Settings, label = "Cấu hình tài khoản học tập")
-                MenuSettingsItem(icon = Icons.Outlined.Notifications, label = "Nhắc nhở ôn thi & Luyện tập")
-                MenuSettingsItem(icon = Icons.Outlined.HelpOutline, label = "Trợ giúp & Đóng góp phản hồi")
+                if (uiState.user?.role == "admin") {
+                    MenuSettingsItem(
+                        icon = Icons.Outlined.Settings,
+                        label = "Bảng quản trị Admin 🛠️",
+                        onClick = onNavigateToAdmin
+                    )
+                }
+
+                // Mục 1: Cấu hình tài khoản học tập
+                MenuSettingsItem(
+                    icon = Icons.Outlined.Settings,
+                    label = "Cấu hình tài khoản học tập",
+                    onClick = onEditClick
+                )
+
+                // Mục 2: Nhắc nhở ôn thi
+                var showReminderDialog by remember { mutableStateOf(false) }
+                MenuSettingsItem(
+                    icon = Icons.Outlined.Notifications,
+                    label = "Nhắc nhở ôn thi & Luyện tập",
+                    onClick = { showReminderDialog = true }
+                )
+                if (showReminderDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showReminderDialog = false },
+                        icon = { Text(text = "🔔", fontSize = 28.sp) },
+                        title = {
+                            Text(
+                                text = "Nhắc nhở ôn thi",
+                                fontFamily = PlayfairDisplayFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp
+                            )
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "Tính năng nhắc nhở thông minh sẽ được ra mắt trong phiên bản tiếp theo!",
+                                    fontFamily = DmSansFamily,
+                                    fontSize = 13.sp,
+                                    color = ColorTextOnLightSecondary,
+                                    lineHeight = 20.sp
+                                )
+                                Text(
+                                    text = "💡 Trong thời gian chờ, bạn có thể tự tạo lịch ôn tập cá nhân bằng cách hoàn thành một Quiz mội ngày để củng cố kiến thức!",
+                                    fontFamily = DmSansFamily,
+                                    fontSize = 12.sp,
+                                    color = ColorAmberDark,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showReminderDialog = false }) {
+                                Text(
+                                    text = "Đã hiểu",
+                                    fontFamily = DmSansFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ColorAmberDark
+                                )
+                            }
+                        }
+                    )
+                }
+
+                // Mục 3: Trợ giúp & Đóng góp phản hồi
+                var showHelpDialog by remember { mutableStateOf(false) }
+                MenuSettingsItem(
+                    icon = Icons.AutoMirrored.Outlined.HelpOutline,
+                    label = "Trợ giúp & Đóng góp phản hồi",
+                    onClick = { showHelpDialog = true }
+                )
+                if (showHelpDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showHelpDialog = false },
+                        icon = { Text(text = "💬", fontSize = 28.sp) },
+                        title = {
+                            Text(
+                                text = "Trợ giúp & Phản hồi",
+                                fontFamily = PlayfairDisplayFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 17.sp
+                            )
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = "EduVault rất trân trọng mọi ý kiến đóng góp và báo lỗi từ cộng đồng sinh viên!",
+                                    fontFamily = DmSansFamily,
+                                    fontSize = 13.sp,
+                                    color = ColorTextOnLightSecondary,
+                                    lineHeight = 20.sp
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Email,
+                                        contentDescription = null,
+                                        tint = ColorAmberDark,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "hanryit6012@gmail.com",
+                                        fontFamily = DmSansFamily,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.sp,
+                                        color = ColorAmberDark
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(text = "💬", fontSize = 14.sp)
+                                    Text(
+                                        text = "Phản hồi trực tiếp qua tính năng báo cáo trên từng tài liệu",
+                                        fontFamily = DmSansFamily,
+                                        fontSize = 12.sp,
+                                        color = ColorTextOnLightSecondary
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showHelpDialog = false }) {
+                                Text(
+                                    text = "Đã hiểu",
+                                    fontFamily = DmSansFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ColorAmberDark
+                                )
+                            }
+                        }
+                    )
+                }
             }
         }
 
@@ -499,7 +698,7 @@ private fun ProfileViewDetails(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.ExitToApp,
+                    imageVector = Icons.AutoMirrored.Outlined.ExitToApp,
                     contentDescription = null,
                     tint = ColorError,
                     modifier = Modifier.size(18.dp)
@@ -558,12 +757,13 @@ private fun StatCard(
 @Composable
 private fun MenuSettingsItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String
+    label: String,
+    onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {}
+            .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -874,6 +1074,215 @@ private fun AlertBox(
                 color = color,
                 lineHeight = 16.sp
             )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GUEST PROFILE SCREEN — Hiển thị khi người dùng chưa đăng nhập
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+fun GuestProfileScreen(
+    paddingValues: PaddingValues,
+    onNavigateToLogin: () -> Unit,
+    onNavigateToRegister: () -> Unit
+) {
+    val features = listOf(
+        "📚" to "Lưu tiến trình học tập",
+        "🪙" to "Nhận Credit khi chia sẻ tài liệu",
+        "🤖" to "Làm Quiz AI & ôn tập Flashcard",
+        "🗂️" to "Quản lý tài liệu cá nhân",
+        "🔖" to "Đánh dấu & lưu tài liệu yêu thích",
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ColorPaper)
+            .padding(bottom = paddingValues.calculateBottomPadding())
+    ) {
+        // Gradient background accent ở trên
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(260.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(ColorInk, Color(0xFF252545), ColorPaper)
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(Modifier.height(64.dp))
+
+            // Avatar placeholder
+            Box(
+                modifier = Modifier
+                    .size(90.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.verticalGradient(listOf(ColorAmber, ColorAmberDark))
+                    )
+                    .border(3.dp, ColorPaper, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "👤", fontSize = 38.sp)
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Text(
+                text = "Chào mừng đến EduVault",
+                fontFamily = PlayfairDisplayFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = ColorTextOnDark,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = "Đăng nhập để trải nghiệm đầy đủ\ntính năng học tập thông minh",
+                fontFamily = DmSansFamily,
+                fontSize = 14.sp,
+                color = ColorTextOnDarkSecondary,
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
+
+            Spacer(Modifier.height(32.dp))
+
+            // Feature highlights card
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(ColorCream)
+                    .border(1.dp, ColorBorder, RoundedCornerShape(16.dp))
+                    .padding(20.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        text = "Dành cho thành viên EduVault",
+                        fontFamily = PlayfairDisplayFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = ColorAmberDark
+                    )
+                    features.forEach { (emoji, text) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(ColorAmber.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = emoji, fontSize = 16.sp)
+                            }
+                            Text(
+                                text = text,
+                                fontFamily = DmSansFamily,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = ColorTextOnLight
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            // Login button (primary)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        Brush.horizontalGradient(listOf(ColorAmber, ColorAmberDark))
+                    )
+                    .clickable { onNavigateToLogin() }
+                    .padding(vertical = 15.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.Login,
+                        contentDescription = null,
+                        tint = ColorInk,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Đăng nhập",
+                        fontFamily = DmSansFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = ColorInk
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Register button (outlined)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(1.5.dp, ColorInk, RoundedCornerShape(12.dp))
+                    .background(Color.Transparent)
+                    .clickable { onNavigateToRegister() }
+                    .padding(vertical = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.PersonAdd,
+                        contentDescription = null,
+                        tint = ColorInk,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Tạo tài khoản miễn phí",
+                        fontFamily = DmSansFamily,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        color = ColorInk
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                text = "🪙 Nhận ngay 5 Credit khi đăng ký lần đầu",
+                fontFamily = DmSansFamily,
+                fontSize = 12.sp,
+                color = ColorAmberDark,
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Medium
+            )
+
+            Spacer(Modifier.height(32.dp))
         }
     }
 }

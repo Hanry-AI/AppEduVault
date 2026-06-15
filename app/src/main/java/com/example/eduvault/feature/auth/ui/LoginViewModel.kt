@@ -70,6 +70,25 @@ class LoginViewModel @Inject constructor(
         _uiState.update { it.copy(loginError = null) }
     }
 
+    fun loginWithGoogle(idToken: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, loginError = null) }
+            authRepository.loginWithGoogle(idToken)
+                .onSuccess {
+                    _uiState.update { it.copy(isLoading = false, isLoginSuccess = true) }
+                }
+                .onFailure { exception ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            loginError = exception.message ?: "Đăng nhập Google thất bại"
+                        )
+                    }
+                }
+        }
+    }
+
+
     // ─── Private helpers ──────────────────────────────────────────────────────
 
     private fun validateInputs(): Boolean {

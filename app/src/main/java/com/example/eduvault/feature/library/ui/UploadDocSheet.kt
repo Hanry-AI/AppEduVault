@@ -27,7 +27,7 @@ import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.InsertDriveFile
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.eduvault.core.theme.ColorAmber
@@ -68,6 +68,7 @@ import com.example.eduvault.core.theme.DmSansFamily
 import com.example.eduvault.core.theme.JetBrainsMonoFamily
 import com.example.eduvault.core.theme.PlayfairDisplayFamily
 import com.example.eduvault.domain.repository.AuthRepository
+import com.example.eduvault.domain.repository.DocumentRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -85,7 +86,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class UploadDocViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val documentRepository: DocumentRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UploadUiState())
@@ -140,7 +142,7 @@ class UploadDocViewModel @Inject constructor(
                     it.copy(
                         selectedFileUri = file.absolutePath,
                         selectedFileName = fileName,
-                        selectedFileSize = "${String.format("%.2f", file.length() / (1024.0 * 1024.0))} MB",
+                        selectedFileSize = "${String.format(java.util.Locale.US, "%.2f", file.length() / (1024.0 * 1024.0))} MB",
                         errorMessage = null
                     ) 
                 }
@@ -170,7 +172,7 @@ class UploadDocViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(isUploading = true, errorMessage = null) }
-            authRepository.uploadUserDocument(
+            documentRepository.uploadUserDocument(
                 title = state.title.trim(),
                 subjectCode = state.subjectCode.trim(),
                 docType = state.docType,
@@ -512,7 +514,7 @@ fun UploadDocSheet(
                             ) {
                                 if (uiState.selectedFileName.isNotEmpty()) {
                                     Icon(
-                                        imageVector = Icons.Outlined.InsertDriveFile,
+                                        imageVector = Icons.AutoMirrored.Outlined.InsertDriveFile,
                                         contentDescription = null,
                                         tint = ColorForest,
                                         modifier = Modifier.size(32.dp)

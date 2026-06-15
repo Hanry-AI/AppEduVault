@@ -39,7 +39,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Visibility
@@ -82,7 +82,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.eduvault.core.theme.ColorAmber
 import com.example.eduvault.core.theme.ColorAmberDark
@@ -249,7 +249,7 @@ private fun ResetPasswordPhoneLayout(
                         .background(ColorInkLight)
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = "Quay lại",
                         tint = ColorTextOnDark,
                         modifier = Modifier.size(20.dp)
@@ -459,7 +459,7 @@ private fun ResetPasswordLeftPanel(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = "Quay lại",
                     tint = ColorTextOnDark,
                     modifier = Modifier.size(18.dp)
@@ -622,7 +622,44 @@ private fun ResetPasswordFormPanel(
             color = ColorTextOnLightSecondary,
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Badge hiển thị chế độ hoạt động cực kỳ chuyên nghiệp
+        if (uiState.isDemoMode) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(ColorAmberLight.copy(alpha = 0.2f))
+                    .border(1.dp, ColorAmber.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "⚡ Chế độ Demo (Offline)",
+                    fontFamily = DmSansFamily,
+                    fontSize = 10.sp,
+                    color = ColorAmberDark,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(ColorForestLight.copy(alpha = 0.15f))
+                    .border(1.dp, ColorForest.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = "🔒 Khôi phục mật khẩu thật (Firebase Auth)",
+                    fontFamily = DmSansFamily,
+                    fontSize = 10.sp,
+                    color = ColorForest,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
 
         // ── Password strength indicator ───────────────────────────────────
         PasswordStrengthIndicator(password = uiState.newPassword)

@@ -12,7 +12,20 @@
           "package_name": "com.example.eduvault"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "279095552082-upvnjmnqd4r6k9b28ib81pq6i070aie8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.eduvault",
+            "certificate_hash": "0e642136fe540d27978d7207ac8d5ea5792e7f7a"
+          }
+        },
+        {
+          "client_id": "279095552082-6840smd5qqp453ssbjk7ilhbbimklhdv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCO_uR45DwzS_B5KcapLr3zGb96ip6onic"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "279095552082-6840smd5qqp453ssbjk7ilhbbimklhdv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

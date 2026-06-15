@@ -21,16 +21,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val startDestination = if (firebaseAuth.currentUser != null) {
-            AppRoutes.HOME
-        } else {
-            AppRoutes.LOGIN
-        }
-
         setContent {
             EduVaultTheme {
-                // NavGraph xử lý toàn bộ điều hướng giữa các màn hình
-                AppNavGraph(startDestination = startDestination)
+                // Luôn bắt đầu tại HOME — Guest Mode được xử lý trong ViewModel
+                AppNavGraph(startDestination = AppRoutes.HOME)
             }
         }
     }

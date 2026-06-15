@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.eduvault.domain.model.AuthState
 import com.example.eduvault.domain.repository.AuthRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,18 +36,36 @@ class ProfileViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             authRepository.getCurrentUser()
                 .onSuccess { user ->
-                    _uiState.update {
-                        it.copy(
-                            user = user,
-                            isLoading = false,
-                            editFullName = user?.fullName ?: "",
-                            editUniversity = user?.university ?: "",
-                            editAvatarUrl = user?.avatarUrl ?: ""
-                        )
+                    if (user != null) {
+                        _uiState.update {
+                            it.copy(
+                                authState = AuthState.Authenticated(user),
+                                user = user,
+                                isLoading = false,
+                                editFullName = user.fullName,
+                                editUniversity = user.university,
+                                editAvatarUrl = user.avatarUrl
+                            )
+                        }
+                    } else {
+                        // Chưa đăng nhập — chế độ khách
+                        _uiState.update {
+                            it.copy(
+                                authState = AuthState.Guest,
+                                user = null,
+                                isLoading = false
+                            )
+                        }
                     }
                 }
                 .onFailure { error ->
-                    _uiState.update { it.copy(isLoading = false, errorMessage = error.message) }
+                    _uiState.update {
+                        it.copy(
+                            authState = AuthState.Guest,
+                            isLoading = false,
+                            errorMessage = error.message
+                        )
+                    }
                 }
         }
     }

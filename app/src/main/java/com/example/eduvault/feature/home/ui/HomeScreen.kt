@@ -1,5 +1,6 @@
 package com.example.eduvault.feature.home.ui
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -35,11 +37,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.outlined.Search
@@ -55,8 +57,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -72,6 +76,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import kotlinx.coroutines.tasks.await
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -80,13 +85,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.eduvault.feature.library.ui.LibraryContent
 import com.example.eduvault.feature.library.ui.UploadDocSheet
 import com.example.eduvault.feature.library.ui.DocViewerDialog
 import com.example.eduvault.feature.library.ui.LibraryDoc
 import com.example.eduvault.feature.library.ui.LibraryDocType
+import com.example.eduvault.feature.notes.ui.NotesDialog
+import com.example.eduvault.feature.notes.ui.NoteEditorDialog
+import com.example.eduvault.feature.notes.ui.NotesViewModel
 import com.example.eduvault.feature.quiz.ui.QuizContent
 import com.example.eduvault.feature.quiz.ui.QuizViewModel
 import com.example.eduvault.feature.quiz.ui.QuizSet
@@ -102,6 +110,7 @@ import com.example.eduvault.core.theme.ColorError
 import com.example.eduvault.core.theme.ColorInk
 import com.example.eduvault.core.theme.ColorInkLight
 import com.example.eduvault.core.theme.ColorInkLighter
+import com.example.eduvault.core.theme.ColorPaper
 import com.example.eduvault.core.theme.ColorTextOnDark
 import com.example.eduvault.core.theme.ColorTextOnDarkSecondary
 import com.example.eduvault.core.theme.ColorTextOnLight
@@ -113,30 +122,54 @@ import com.example.eduvault.core.theme.PlayfairDisplayFamily
 
 // ─── Entry Point ──────────────────────────────────────────────────────────────
 
+import com.example.eduvault.domain.model.AuthState
+import com.example.eduvault.domain.model.DocReaderState
+import com.example.eduvault.domain.model.AiChatMessage
+import com.example.eduvault.core.ui.parseMarkdownToAnnotatedString
+import androidx.compose.runtime.collectAsState
+
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     quizViewModel: QuizViewModel = hiltViewModel(),
-    onLogout: () -> Unit = {}
+    libraryViewModel: com.example.eduvault.feature.library.ui.LibraryViewModel = hiltViewModel(),
+    onLogout: () -> Unit = {},
+    onNavigateToAdmin: () -> Unit = {},
+    onNavigateToLogin: () -> Unit = {},
+    onNavigateToRegister: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val dynamicTopicTags by viewModel.dynamicTopicTags.collectAsStateWithLifecycle()
+    val dynamicRecentDocs by viewModel.recentDocs.collectAsStateWithLifecycle()
+    val dynamicActivityItems by viewModel.activityItems.collectAsStateWithLifecycle()
+    val libraryUiState by libraryViewModel.uiState.collectAsStateWithLifecycle()
     var showUploadSheet by remember { mutableStateOf(false) }
+    var showGuestPrompt by remember { mutableStateOf(false) }
     var showFlashcards by remember { mutableStateOf(false) }
     var showStudyAi by remember { mutableStateOf(false) }
     var showNotifications by remember { mutableStateOf(false) }
     var showCreateQuizSetup by remember { mutableStateOf(false) }
     var presetDocTitle by remember { mutableStateOf("") }
     var selectedRecentDoc by remember { mutableStateOf<RecentDoc?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    var showNotes by remember { mutableStateOf(false) }
+    val notesViewModel: NotesViewModel = hiltViewModel()
+    val notesUiState by notesViewModel.uiState.collectAsStateWithLifecycle()
 
     HomeScaffold(
         uiState = uiState,
-        recentDocs = viewModel.recentDocs,
-        activityItems = viewModel.activityItems,
-        topicTags = viewModel.topicTags,
+        recentDocs = dynamicRecentDocs,
+        activityItems = dynamicActivityItems,
+        topicTags = dynamicTopicTags,
         quizViewModel = quizViewModel,
         onTabSelected = viewModel::onTabSelected,
-        onUploadClick = { showUploadSheet = true },
+        onUploadClick = {
+            // Guest không được upload
+            if (uiState.authState is AuthState.Guest) showGuestPrompt = true
+            else showUploadSheet = true
+        },
         onOpenDoc = { recentDoc ->
             if (recentDoc.type == DocType.QUIZ) {
                 presetDocTitle = recentDoc.title
@@ -147,14 +180,38 @@ fun HomeScreen(
         },
         onOpenFlashcards = { showFlashcards = true },
         onOpenStudyAi = { showStudyAi = true },
+        onOpenNotes = {
+            if (uiState.authState is AuthState.Guest) {
+                showGuestPrompt = true
+            } else {
+                showNotes = true
+            }
+        },
         onNotificationClick = { showNotifications = true },
         onStartQuizSetup = { title ->
             presetDocTitle = title
             showCreateQuizSetup = true
         },
-        onLogout = onLogout
+        onLogout = onLogout,
+        onNavigateToAdmin = onNavigateToAdmin,
+        onNavigateToLogin = onNavigateToLogin,
+        onNavigateToRegister = onNavigateToRegister
     )
 
+    if (showNotes) {
+        NotesDialog(
+            viewModel = notesViewModel,
+            onDismiss = { showNotes = false }
+        )
+    }
+
+    if (notesUiState.editingNote != null) {
+        NoteEditorDialog(
+            viewModel = notesViewModel,
+            onDismiss = { notesViewModel.closeNoteEditor() }
+        )
+    }
+    
     if (showUploadSheet) {
         UploadDocSheet(
             onDismiss = { showUploadSheet = false }
@@ -184,22 +241,35 @@ fun HomeScreen(
             quizViewModel = quizViewModel,
             presetTitle = presetDocTitle,
             onDismiss = { showCreateQuizSetup = false },
-            onConfirm = { docTitle, count, difficulty ->
+            onConfirm = { docTitle, count, difficulty, format ->
                 showCreateQuizSetup = false
-                val isMkt = docTitle.contains("Marketing", ignoreCase = true)
-                val customSet = QuizSet(
-                    id = if (isMkt) "2" else "1",
-                    subject = if (isMkt) "MKT301 - Marketing" else "EC0201 - Kinh tế vi mô",
-                    title = "Quiz: $docTitle",
+                val selectedDocObj = quizViewModel.availableDocs.value.find { it.title == docTitle }
+                val docContent = if (selectedDocObj != null) {
+                    "Môn học: ${selectedDocObj.courseCode} - Tiêu đề: ${selectedDocObj.title} - Phân loại: ${selectedDocObj.type.label}."
+                } else {
+                    "Tài liệu học tập môn $docTitle tổng hợp lý thuyết trọng tâm."
+                }
+
+                quizViewModel.generateAndStartQuiz(
+                    docTitle = docTitle,
+                    count = count,
                     difficulty = difficulty,
-                    questionCount = count,
-                    playCount = "1",
-                    isNew = true,
-                    bgIndex = if (isMkt) 1 else 0
+                    format = format,
+                    docContent = docContent,
+                    onError = { errorMsg ->
+                        android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
+                    }
                 )
-                quizViewModel.startQuiz(customSet)
                 viewModel.onTabSelected(HomeTab.QUIZ)
             }
+        )
+    }
+
+    if (showGuestPrompt) {
+        GuestLoginPromptDialog(
+            onDismiss = { showGuestPrompt = false },
+            onNavigateToLogin = onNavigateToLogin,
+            onNavigateToRegister = onNavigateToRegister
         )
     }
 
@@ -219,9 +289,102 @@ fun HomeScreen(
             views = "${recentDoc.views}",
             bgIndex = recentDoc.bgIndex
         )
+        // Xác định trạng thái đọc dựa trên AuthState + Credit
+        val user = (uiState.authState as? AuthState.Authenticated)?.user
+        val isUnlocked = user?.unlockedDocuments?.contains(recentDoc.id) == true
+        val readerState = when {
+            isUnlocked -> DocReaderState.Unlocked
+            uiState.authState is AuthState.Guest -> DocReaderState.GuestLocked
+            user?.documentCredits == 0 -> DocReaderState.NoCredits
+            else -> DocReaderState.HasCredits(user?.documentCredits ?: 1)
+        }
+        LaunchedEffect(recentDoc.id) {
+            libraryViewModel.loadDocViewerContent(
+                recentDoc.id, 
+                recentDoc.title, 
+                recentDoc.course, 
+                when (recentDoc.type) {
+                    DocType.NOTE -> "Ghi chú"
+                    DocType.QUIZ -> "Quiz"
+                    DocType.SLIDE -> "Slide"
+                    DocType.SUMMARY -> "Tóm tắt"
+                }
+            )
+        }
+
         DocViewerDialog(
             doc = mappedDoc,
-            onDismiss = { selectedRecentDoc = null }
+            readerState = readerState,
+            activeContent = libraryUiState.activeDocContent,
+            isLoadingContent = libraryUiState.isLoadingDocContent,
+            contentError = libraryUiState.docContentError,
+            onRetryLoadContent = {
+                libraryViewModel.loadDocViewerContent(
+                    recentDoc.id, 
+                    recentDoc.title, 
+                    recentDoc.course, 
+                    when (recentDoc.type) {
+                        DocType.NOTE -> "Ghi chú"
+                        DocType.QUIZ -> "Quiz"
+                        DocType.SLIDE -> "Slide"
+                        DocType.SUMMARY -> "Tóm tắt"
+                    }
+                )
+            },
+            onDismiss = {
+                libraryViewModel.clearDocViewerContent()
+                selectedRecentDoc = null
+            },
+            onReportClick = {
+                libraryViewModel.reportDocument(
+                    docId = recentDoc.id,
+                    onSuccess = {
+                        libraryViewModel.clearDocViewerContent()
+                        selectedRecentDoc = null
+                        android.widget.Toast.makeText(context, "Đã gửi báo cáo vi phạm tài liệu này!", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onFailure = { err ->
+                        android.widget.Toast.makeText(context, "Tố cáo thất bại: $err", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                )
+            },
+            onNavigateToLogin = onNavigateToLogin,
+            onNavigateToRegister = onNavigateToRegister,
+            onUnlockWithCredit = {
+                libraryViewModel.unlockDocument(recentDoc.id) { result ->
+                    result.onSuccess {
+                        // Cập nhật lại HomeViewModel để làm mới thông tin UI
+                        viewModel.loadCurrentUser()
+                        android.widget.Toast.makeText(context, "Mở khóa tài liệu thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                    }.onFailure { err ->
+                        android.widget.Toast.makeText(context, err.localizedMessage ?: "Mở khóa thất bại", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            onGenerateSummary = {
+                val deferred = kotlinx.coroutines.CompletableDeferred<Result<String>>()
+                libraryViewModel.generateDocumentSummary(
+                    docId = recentDoc.id,
+                    docTitle = recentDoc.title,
+                    docType = when (recentDoc.type) {
+                        DocType.NOTE -> "Ghi chú"
+                        DocType.QUIZ -> "Quiz"
+                        DocType.SLIDE -> "Slide"
+                        DocType.SUMMARY -> "Tóm tắt"
+                    },
+                    content = libraryUiState.activeDocContent?.content ?: "Tóm tắt tài liệu học thuật ${recentDoc.title} thuộc chủ đề ${recentDoc.course}."
+                ) { result ->
+                    deferred.complete(result)
+                }
+                deferred.await()
+            },
+            onNoteClick = { doc ->
+                if (uiState.authState is AuthState.Guest) {
+                    showGuestPrompt = true
+                } else {
+                    notesViewModel.openNoteEditor(doc.id, doc.title, doc.courseCode)
+                }
+            }
         )
     }
 }
@@ -242,9 +405,13 @@ private fun HomeScaffold(
     onOpenDoc: (RecentDoc) -> Unit,
     onOpenFlashcards: () -> Unit,
     onOpenStudyAi: () -> Unit,
+    onOpenNotes: () -> Unit,
     onNotificationClick: () -> Unit,
     onStartQuizSetup: (String) -> Unit,
-    onLogout: () -> Unit = {}
+    onLogout: () -> Unit = {},
+    onNavigateToAdmin: () -> Unit = {},
+    onNavigateToLogin: () -> Unit = {},
+    onNavigateToRegister: () -> Unit = {}
 ) {
     Scaffold(
         containerColor = ColorCream,
@@ -269,11 +436,14 @@ private fun HomeScaffold(
                 onOpenDoc = onOpenDoc,
                 onOpenFlashcards = onOpenFlashcards,
                 onOpenStudyAi = onOpenStudyAi,
+                onOpenNotes = onOpenNotes,
                 onNotificationClick = onNotificationClick
             )
             HomeTab.DOCUMENTS -> LibraryContent(
                 paddingValues = paddingValues,
-                onUploadClick = onUploadClick
+                onUploadClick = onUploadClick,
+                onNavigateToLogin = onNavigateToLogin,
+                onNavigateToRegister = onNavigateToRegister
             )
             HomeTab.QUIZ -> QuizContent(
                 paddingValues = paddingValues,
@@ -282,7 +452,10 @@ private fun HomeScaffold(
             )
             HomeTab.PROFILE -> ProfileContent(
                 paddingValues = paddingValues,
-                onLogout = onLogout
+                onLogout = onLogout,
+                onNavigateToAdmin = onNavigateToAdmin,
+                onNavigateToLogin = onNavigateToLogin,
+                onNavigateToRegister = onNavigateToRegister
             )
         }
     }
@@ -329,7 +502,7 @@ private fun HomeBottomNav(
             BottomNavItem(
                 selected = selectedTab == HomeTab.DOCUMENTS,
                 onClick = { onTabSelected(HomeTab.DOCUMENTS) },
-                icon = Icons.Outlined.LibraryBooks,
+                icon = Icons.AutoMirrored.Outlined.LibraryBooks,
                 label = "Thư viện",
                 modifier = Modifier.weight(1f)
             )
@@ -434,6 +607,7 @@ private fun HomeContent(
     onOpenDoc: (RecentDoc) -> Unit,
     onOpenFlashcards: () -> Unit,
     onOpenStudyAi: () -> Unit,
+    onOpenNotes: () -> Unit,
     onNotificationClick: () -> Unit
 ) {
     LazyColumn(
@@ -473,6 +647,7 @@ private fun HomeContent(
                 onTabSelected = onTabSelected,
                 onOpenFlashcards = onOpenFlashcards,
                 onOpenStudyAi = onOpenStudyAi,
+                onOpenNotes = onOpenNotes,
                 onStartQuizSetup = { onStartQuizSetup("") },
                 modifier = Modifier.padding(horizontal = 14.dp)
             )
@@ -860,9 +1035,9 @@ private fun HeroFloatCard(
 @Composable
 private fun SectionHeader(
     title: String,
+    modifier: Modifier = Modifier,
     actionText: String? = null,
     onActionClick: () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -894,7 +1069,7 @@ private fun SectionHeader(
                     color = ColorForest,
                 )
                 Icon(
-                    imageVector = Icons.Outlined.ArrowForward,
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
                     contentDescription = null,
                     tint = ColorForest,
                     modifier = Modifier.size(14.dp)
@@ -911,11 +1086,12 @@ private fun QuickToolsGrid(
     onTabSelected: (HomeTab) -> Unit,
     onOpenFlashcards: () -> Unit,
     onOpenStudyAi: () -> Unit,
+    onOpenNotes: () -> Unit,
     onStartQuizSetup: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val tools = listOf(
-        QuickTool("📝", "Ghi chú AI", "Tự động tóm tắt tài liệu thành ghi chú có cấu trúc", Color(0xFF4A5568)),
+        QuickTool("📝", "Ghi chú", "Xem và chỉnh sửa tất cả ghi chú cá nhân của bạn", ColorAmber),
         QuickTool("🧩", "Tạo Quiz", "Sinh câu hỏi trắc nghiệm từ bất kỳ tài liệu nào", ColorForest),
         QuickTool("🃏", "Flashcard", "Ôn tập nhanh với phương pháp spaced repetition", Color(0xFFC0392B)),
         QuickTool("🔍", "Hỏi AI", "Đặt câu hỏi về bất kỳ chủ đề nào", ColorInk),
@@ -939,7 +1115,7 @@ private fun QuickToolsGrid(
             QuickToolCard(
                 tool = tools[0],
                 bgColor = bgColors[0],
-                onClick = { onTabSelected(HomeTab.DOCUMENTS) },
+                onClick = onOpenNotes,
                 modifier = Modifier.weight(1f)
             )
             QuickToolCard(
@@ -1513,16 +1689,49 @@ private class PreviewAuthRepository : com.example.eduvault.domain.repository.Aut
     override suspend fun login(email: String, password: String): Result<com.example.eduvault.domain.model.User> = Result.failure(Exception())
     override suspend fun register(fullName: String, email: String, password: String): Result<com.example.eduvault.domain.model.User> = Result.failure(Exception())
     override suspend fun sendPasswordResetEmail(email: String): Result<Unit> = Result.failure(Exception())
+    override suspend fun verifyPasswordResetCode(code: String): Result<String> = Result.success("user@example.com")
+    override suspend fun confirmPasswordReset(oobCode: String, newPassword: String): Result<Unit> = Result.success(Unit)
     override suspend fun getCurrentUser(): Result<com.example.eduvault.domain.model.User?> = Result.success(null)
     override suspend fun updateProfile(fullName: String, university: String, avatarUrl: String): Result<com.example.eduvault.domain.model.User> = Result.success(com.example.eduvault.domain.model.User("preview_uid", fullName, "preview@example.com"))
     override suspend fun addCredits(amount: Int): Result<com.example.eduvault.domain.model.User> = Result.success(com.example.eduvault.domain.model.User("preview_uid", "Preview User", "preview@example.com"))
     override suspend fun consumeCredit(): Result<com.example.eduvault.domain.model.User> = Result.success(com.example.eduvault.domain.model.User("preview_uid", "Preview User", "preview@example.com"))
+    override suspend fun unlockDocument(docId: String): Result<com.example.eduvault.domain.model.User> = Result.success(com.example.eduvault.domain.model.User("preview_uid", "Preview User", "preview@example.com"))
+    override suspend fun getQuizSets(): Result<List<com.example.eduvault.feature.quiz.ui.QuizSet>> = Result.success(emptyList())
+    override suspend fun getQuizQuestions(quizId: String): Result<List<com.example.eduvault.feature.quiz.ui.QuizQuestion>> = Result.success(emptyList())
+    override suspend fun getAllUsers(): Result<List<com.example.eduvault.domain.model.User>> = Result.success(emptyList())
+    override suspend fun updateUserQuizStats(score: Float, xpEarned: Int): Result<com.example.eduvault.domain.model.User> = Result.success(com.example.eduvault.domain.model.User("preview_uid", "Preview User", "preview@example.com"))
+    override suspend fun toggleSaveDocument(docId: String): Result<com.example.eduvault.domain.model.User> = Result.success(com.example.eduvault.domain.model.User("preview_uid", "Preview User", "preview@example.com"))
+    override suspend fun loginWithGoogle(idToken: String): Result<com.example.eduvault.domain.model.User> = Result.success(com.example.eduvault.domain.model.User("preview_uid", "Preview User", "preview@example.com"))
+    override fun logout() {}
+
+}
+
+private class PreviewDocumentRepository : com.example.eduvault.domain.repository.DocumentRepository {
     override suspend fun uploadUserDocument(title: String, subjectCode: String, docType: String, fileUri: String): Result<Unit> = Result.success(Unit)
     override suspend fun getDocuments(): Result<List<com.example.eduvault.feature.library.ui.LibraryDoc>> = Result.success(emptyList())
-    override fun logout() {}
+    override suspend fun reportDocument(docId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun getCachedDocViewerContent(docId: String): Result<com.example.eduvault.domain.model.DocViewerTabsContent?> = Result.success(null)
+    override suspend fun saveDocViewerContent(docId: String, content: com.example.eduvault.domain.model.DocViewerTabsContent): Result<Unit> = Result.success(Unit)
+}
+
+private class PreviewAiRepository : com.example.eduvault.domain.repository.AiRepository {
+    override suspend fun generateQuizFromDocument(title: String, type: String, content: String, count: Int, format: String): Result<List<com.example.eduvault.feature.quiz.ui.QuizQuestion>> = Result.success(emptyList())
+    override suspend fun generateSummaryFromDocument(title: String, type: String, content: String): Result<String> = Result.success("")
+    override suspend fun askAiAboutDocument(title: String, type: String, content: String, question: String): Result<String> = Result.success("")
+    override suspend fun askGeneralStudyAi(question: String, history: List<com.example.eduvault.domain.model.AiChatMessage>): Result<String> = Result.success("")
+    override suspend fun generateDocViewerContent(title: String, courseCode: String, type: String): Result<com.example.eduvault.domain.model.DocViewerTabsContent> =
+        Result.success(com.example.eduvault.domain.model.DocViewerTabsContent("", "", ""))
+}
+
+private class PreviewNotificationRepository : com.example.eduvault.domain.repository.NotificationRepository {
+    override suspend fun getNotifications(userId: String): Result<List<com.example.eduvault.domain.model.EduNotification>> = Result.success(emptyList())
+    override suspend fun ensureDefaultNotifications(userId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun addNotification(userId: String, title: String, content: String, type: com.example.eduvault.domain.model.NotificationType): Result<Unit> = Result.success(Unit)
+    override suspend fun markAsRead(id: String): Result<Unit> = Result.success(Unit)
 }
 
 @Preview(name = "HomeScreen — Phone", showBackground = true, widthDp = 390, heightDp = 844)
+@SuppressLint("ViewModelConstructorInComposable")
 @Composable
 private fun HomeScreenPreview() {
     EduVaultTheme(darkTheme = false) {
@@ -1531,12 +1740,13 @@ private fun HomeScreenPreview() {
             recentDocs = HomeViewModel.recentDocs,
             activityItems = HomeViewModel.activityItems,
             topicTags = HomeViewModel.topicTags,
-            quizViewModel = QuizViewModel(PreviewAuthRepository()),
+            quizViewModel = QuizViewModel(PreviewAuthRepository(), PreviewDocumentRepository(), PreviewAiRepository(), PreviewNotificationRepository()),
             onTabSelected = {},
             onUploadClick = {},
             onOpenDoc = {},
             onOpenFlashcards = {},
             onOpenStudyAi = {},
+            onOpenNotes = {},
             onNotificationClick = {},
             onStartQuizSetup = {},
         )
@@ -1546,17 +1756,78 @@ private fun HomeScreenPreview() {
 
 
 // ─── Flashcard Dialog (Simulated Study Tool) ────────────────────────────────────
+data class FlashcardItem(val term: String, val definition: String)
+data class FlashcardSet(
+    val id: String,
+    val title: String,
+    val cardCount: Int,
+    val cards: List<FlashcardItem>,
+    val authorId: String,
+    val flashcardSetID: String
+)
+
 @Composable
 fun FlashcardDialog(onDismiss: () -> Unit) {
-    var currentIndex by remember { mutableStateOf(0) }
+    var currentIndex by remember { mutableIntStateOf(0) }
     var isFlipped by remember { mutableStateOf(false) }
 
-    val cards = listOf(
-        Pair("Cung (Supply) là gì?", "Cung là lượng hàng hóa hoặc dịch vụ mà các nhà bán lẻ/sản xuất sẵn sàng bán ở các mức giá khác nhau trong một khoảng thời gian nhất định."),
-        Pair("Cầu (Demand) là gì?", "Cầu là nhu cầu đi kèm với khả năng thanh toán của người tiêu dùng để mua một loại hàng hóa hoặc dịch vụ ở các mức giá khác nhau."),
-        Pair("4P trong Marketing là gì?", "4P là mô hình Marketing Mix cổ điển gồm: Product (Sản phẩm), Price (Giá cả), Place (Phân phối), và Promotion (Xúc tiến thương mại)."),
-        Pair("Chi phí cơ hội?", "Chi phí cơ hội là giá trị của sự lựa chọn tốt nhất đã bị bỏ qua khi đưa ra một quyết định kinh tế.")
+    var flashcardSets by remember { mutableStateOf<List<FlashcardSet>>(emptyList()) }
+    var selectedSet by remember { mutableStateOf<FlashcardSet?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val sampleSet = FlashcardSet(
+        id = "sample_set",
+        title = "Kinh tế học & Marketing cơ bản (Mẫu)",
+        cardCount = 4,
+        cards = listOf(
+            FlashcardItem("Cung (Supply) là gì?", "Cung là lượng hàng hóa hoặc dịch vụ mà các nhà bán lẻ/sản xuất sẵn sàng bán ở các mức giá khác nhau trong một khoảng thời gian nhất định."),
+            FlashcardItem("Cầu (Demand) là gì?", "Cầu là nhu cầu đi kèm với khả năng thanh toán của người tiêu dùng để mua một loại hàng hóa hoặc dịch vụ ở các mức giá khác nhau."),
+            FlashcardItem("4P trong Marketing là gì?", "4P là mô hình Marketing Mix cổ điển gồm: Product (Sản phẩm), Price (Giá cả), Place (Phân phối), và Promotion (Xúc tiến thương mại)."),
+            FlashcardItem("Chi phí cơ hội?", "Chi phí cơ hội là giá trị của sự lựa chọn tốt nhất đã bị bỏ qua khi đưa ra một quyết định kinh tế.")
+        ),
+        authorId = "system",
+        flashcardSetID = "fc_sample"
     )
+
+    LaunchedEffect(Unit) {
+        try {
+            isLoading = true
+            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            val snapshot = db.collection("flashcards").get().await()
+            val sets = snapshot.documents.mapNotNull { doc ->
+                val id = doc.id
+                val title = doc.getString("title") ?: "Bộ thẻ chưa đặt tên"
+                val authorId = doc.getString("authorId") ?: ""
+                val flashcardSetID = doc.getString("flashcardSetID") ?: doc.getString("documentID") ?: id
+                
+                val rawCards = doc.get("cards") as? List<Map<String, Any>> ?: emptyList()
+                val cardsList = rawCards.map { cardMap ->
+                    FlashcardItem(
+                        term = cardMap["term"] as? String ?: "",
+                        definition = cardMap["definition"] as? String ?: ""
+                    )
+                }
+                
+                val cardCount = doc.getLong("cardCount")?.toInt() ?: cardsList.size
+                
+                FlashcardSet(
+                    id = id,
+                    title = title,
+                    cardCount = cardCount,
+                    cards = cardsList,
+                    authorId = authorId,
+                    flashcardSetID = flashcardSetID
+                )
+            }
+            flashcardSets = sets
+            isLoading = false
+        } catch (e: Exception) {
+            errorMessage = e.localizedMessage
+            flashcardSets = emptyList()
+            isLoading = false
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1594,11 +1865,14 @@ fun FlashcardDialog(onDismiss: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Thẻ ghi nhớ (Flashcard) 🃏",
+                            text = if (selectedSet == null) "Bộ thẻ ghi nhớ 🃏" else selectedSet!!.title,
                             fontFamily = PlayfairDisplayFamily,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
-                            color = ColorInk
+                            color = ColorInk,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
                         Icon(
                             imageVector = Icons.Outlined.Cancel,
@@ -1612,103 +1886,282 @@ fun FlashcardDialog(onDismiss: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Text(
-                        text = "Thẻ số ${currentIndex + 1}/${cards.size} · Nhấp vào thẻ để lật mặt",
-                        fontFamily = DmSansFamily,
-                        fontSize = 11.sp,
-                        color = ColorTextOnLightSecondary
-                    )
+                    if (selectedSet == null) {
+                        Text(
+                            text = "Chọn một bộ thẻ để ôn luyện kiến thức",
+                            fontFamily = DmSansFamily,
+                            fontSize = 11.sp,
+                            color = ColorTextOnLightSecondary
+                        )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
 
-                    // Flashcard box
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(180.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                if (!isFlipped) {
-                                    Brush.verticalGradient(listOf(ColorAmber.copy(alpha = 0.12f), ColorAmber.copy(alpha = 0.04f)))
-                                } else {
-                                    Brush.verticalGradient(listOf(ColorForest.copy(alpha = 0.12f), ColorForest.copy(alpha = 0.04f)))
+                        if (isLoading) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    color = ColorAmber
+                                )
+                            }
+                        } else if (flashcardSets.isEmpty()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(ColorAmber.copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = "🃏", fontSize = 32.sp)
                                 }
-                            )
-                            .border(
-                                2.dp,
-                                if (!isFlipped) ColorAmber else ColorForest,
-                                RoundedCornerShape(16.dp)
-                            )
-                            .clickable { isFlipped = !isFlipped }
-                            .padding(20.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = if (!isFlipped) "MẶT TRƯỚC (THUẬT NGỮ)" else "MẶT SAU (ĐỊNH NGHÂN)",
-                                fontFamily = JetBrainsMonoFamily,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (!isFlipped) ColorAmberDark else ColorForest,
-                                letterSpacing = 1.sp
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = if (!isFlipped) cards[currentIndex].first else cards[currentIndex].second,
-                                fontFamily = PlayfairDisplayFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = if (!isFlipped) 20.sp else 13.sp,
-                                color = ColorInk,
-                                textAlign = TextAlign.Center,
-                                lineHeight = 20.sp
-                            )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Chưa có bộ thẻ ghi nhớ nào",
+                                    fontFamily = DmSansFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = ColorInk
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Bạn chưa tạo bộ flashcard nào. Hãy tải lên tài liệu học tập hoặc ôn luyện Quiz để hệ thống tự động tạo các bộ thẻ ôn tập cho bạn nhé!",
+                                    fontFamily = DmSansFamily,
+                                    fontSize = 11.sp,
+                                    color = ColorTextOnLightSecondary,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 280.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                items(flashcardSets) { set ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(ColorCream)
+                                            .border(1.dp, ColorBorder, RoundedCornerShape(12.dp))
+                                            .clickable {
+                                                selectedSet = set
+                                                currentIndex = 0
+                                                isFlipped = false
+                                            }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(ColorAmber.copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(text = "🃏", fontSize = 16.sp)
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = set.title,
+                                                fontFamily = DmSansFamily,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = ColorInk,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = "${set.cardCount} thẻ ghi nhớ · ID: ${set.flashcardSetID}",
+                                                fontFamily = DmSansFamily,
+                                                fontSize = 11.sp,
+                                                color = ColorTextOnLightSecondary
+                                            )
+                                        }
+
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                                            contentDescription = "Học",
+                                            tint = ColorAmberDark,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    }
+                    } else {
+                        val currentSet = selectedSet!!
+                        val cards = currentSet.cards
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(1.dp, ColorBorder, RoundedCornerShape(8.dp))
-                                .background(ColorCream)
-                                .clickable {
-                                    isFlipped = false
-                                    currentIndex = (currentIndex - 1 + cards.size) % cards.size
+                        if (cards.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "Bộ thẻ này không có thẻ nào!",
+                                        fontFamily = DmSansFamily,
+                                        fontSize = 13.sp,
+                                        color = ColorTextOnLightSecondary
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(ColorInk)
+                                            .clickable { selectedSet = null }
+                                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Quay lại",
+                                            fontFamily = DmSansFamily,
+                                            fontSize = 12.sp,
+                                            color = Color.White
+                                        )
+                                    }
                                 }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
+                            }
+                        } else {
                             Text(
-                                text = "← Trước",
+                                text = "Thẻ số ${currentIndex + 1}/${cards.size} · Nhấp vào thẻ để lật mặt",
                                 fontFamily = DmSansFamily,
-                                fontSize = 12.sp,
-                                color = ColorTextOnLight
+                                fontSize = 11.sp,
+                                color = ColorTextOnLightSecondary
                             )
-                        }
 
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(ColorInk)
-                                .clickable {
-                                    isFlipped = false
-                                    currentIndex = (currentIndex + 1) % cards.size
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(
+                                        if (!isFlipped) {
+                                            Brush.verticalGradient(listOf(ColorAmber.copy(alpha = 0.12f), ColorAmber.copy(alpha = 0.04f)))
+                                        } else {
+                                            Brush.verticalGradient(listOf(ColorForest.copy(alpha = 0.12f), ColorForest.copy(alpha = 0.04f)))
+                                        }
+                                    )
+                                    .border(
+                                        2.dp,
+                                        if (!isFlipped) ColorAmber else ColorForest,
+                                        RoundedCornerShape(16.dp)
+                                    )
+                                    .clickable { isFlipped = !isFlipped }
+                                    .padding(20.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = if (!isFlipped) "MẶT TRƯỚC (THUẬT NGỮ)" else "MẶT SAU (ĐỊNH NGHĨA)",
+                                        fontFamily = JetBrainsMonoFamily,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (!isFlipped) ColorAmberDark else ColorForest,
+                                        letterSpacing = 1.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .verticalScroll(rememberScrollState()),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = if (!isFlipped) cards[currentIndex].term else cards[currentIndex].definition,
+                                            fontFamily = PlayfairDisplayFamily,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = if (!isFlipped) 20.sp else 13.sp,
+                                            color = ColorInk,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 20.sp
+                                        )
+                                    }
                                 }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = "Tiếp theo →",
-                                fontFamily = DmSansFamily,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                            }
+
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(1.dp, ColorBorder, RoundedCornerShape(8.dp))
+                                        .background(ColorCream)
+                                        .clickable {
+                                            isFlipped = false
+                                            currentIndex = (currentIndex - 1 + cards.size) % cards.size
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "← Trước",
+                                        fontFamily = DmSansFamily,
+                                        fontSize = 12.sp,
+                                        color = ColorTextOnLight
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(1.dp, ColorBorder, RoundedCornerShape(8.dp))
+                                        .background(Color.White)
+                                        .clickable {
+                                            selectedSet = null
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Danh sách",
+                                        fontFamily = DmSansFamily,
+                                        fontSize = 12.sp,
+                                        color = ColorTextOnLightSecondary
+                                    )
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ColorInk)
+                                        .clickable {
+                                            isFlipped = false
+                                            currentIndex = (currentIndex + 1) % cards.size
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Tiếp theo →",
+                                        fontFamily = DmSansFamily,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1719,15 +2172,13 @@ fun FlashcardDialog(onDismiss: () -> Unit) {
 
 // ─── StudyAI Dialog (Simulated Companion Bot) ───────────────────────────────────
 @Composable
-fun StudyAiDialog(onDismiss: () -> Unit) {
+fun StudyAiDialog(
+    onDismiss: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel()
+) {
     var messageQuery by remember { mutableStateOf("") }
-    var chatMessages by remember {
-        mutableStateOf(
-            listOf(
-                Pair(false, "Chào bạn! Mình là Trợ lý Học tập StudyAI. Bạn cần mình giải đáp thắc mắc, tóm tắt tài liệu hay tạo câu hỏi ôn tập nào hôm nay? 🧠")
-            )
-        )
-    }
+    val chatMessages by viewModel.chatMessages.collectAsState()
+    val isAiTyping by viewModel.isAiTyping.collectAsState()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1749,8 +2200,7 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
-                    ) { /* chặn click trượt */ }
-                    .padding(vertical = 24.dp),
+                    ) { /* chặn click trượt */ },
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
@@ -1773,10 +2223,10 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                                     color = ColorInk
                                 )
                                 Text(
-                                    text = "Trợ lý AI đang hoạt động",
+                                    text = if (isAiTyping) "StudyAI đang soạn câu trả lời..." else "Trợ lý AI đang hoạt động",
                                     fontFamily = DmSansFamily,
                                     fontSize = 10.sp,
-                                    color = ColorForest
+                                    color = if (isAiTyping) ColorAmberDark else ColorForest
                                 )
                             }
                         }
@@ -1793,6 +2243,11 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Chat messages
+                    val scrollState = rememberScrollState()
+                    LaunchedEffect(chatMessages.size, isAiTyping) {
+                        scrollState.animateScrollTo(scrollState.maxValue)
+                    }
+
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1801,10 +2256,12 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                             .background(ColorCream)
                             .border(1.dp, ColorBorder, RoundedCornerShape(12.dp))
                             .padding(12.dp)
-                            .verticalScroll(rememberScrollState()),
+                            .verticalScroll(scrollState),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        chatMessages.forEach { (isUser, text) ->
+                        chatMessages.forEach { msg ->
+                            val isUser = msg.isUser
+                            val text = msg.text
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -1823,13 +2280,62 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                                         .background(if (isUser) ColorAmber else ColorInk)
                                         .padding(10.dp)
                                 ) {
-                                    Text(
-                                        text = text,
-                                        fontFamily = DmSansFamily,
-                                        fontSize = 12.sp,
-                                        color = if (isUser) ColorInk else Color.White,
-                                        lineHeight = 16.sp
-                                    )
+                                    if (isUser) {
+                                        Text(
+                                            text = text,
+                                            fontFamily = DmSansFamily,
+                                            fontSize = 12.sp,
+                                            color = ColorInk,
+                                            lineHeight = 16.sp
+                                        )
+                                    } else {
+                                        Text(
+                                            text = parseMarkdownToAnnotatedString(text),
+                                            fontFamily = DmSansFamily,
+                                            fontSize = 12.sp,
+                                            color = Color.White,
+                                            lineHeight = 16.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Bong bóng AI đang suy nghĩ (typing indicator)
+                        if (isAiTyping) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Start
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.82f)
+                                        .clip(
+                                            RoundedCornerShape(
+                                                topStart = 12.dp,
+                                                topEnd = 12.dp,
+                                                bottomStart = 0.dp,
+                                                bottomEnd = 12.dp
+                                            )
+                                        )
+                                        .background(ColorInk)
+                                        .padding(10.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            color = ColorAmber,
+                                            strokeWidth = 1.5.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "StudyAI đang suy nghĩ...",
+                                            fontFamily = DmSansFamily,
+                                            fontSize = 11.sp,
+                                            color = Color.White.copy(alpha = 0.8f),
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1849,14 +2355,8 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                                     .clip(CircleShape)
                                     .background(ColorCream)
                                     .border(1.dp, ColorBorder, CircleShape)
-                                    .clickable {
-                                        val userMsg = suggestion
-                                        val aiResponse = when (suggestion) {
-                                            "Tóm tắt môn học" -> "Môn Kinh tế vi mô nghiên cứu hành vi của các tác nhân kinh tế riêng lẻ: người tiêu dùng, doanh nghiệp và chính phủ trên thị trường cụ thể. Các khái niệm cốt lõi gồm Cung-Cầu, Hệ số co giãn, Lý thuyết người tiêu dùng, và các cấu trúc thị trường."
-                                            "Giải thích SWOT" -> "SWOT là công cụ phân tích chiến lược doanh nghiệp gồm: Strengths (Điểm mạnh), Weaknesses (Điểm yếu), Opportunities (Cơ hội), và Threats (Thách thức). Trong đó Điểm mạnh/Điểm yếu là nhân tố bên trong, còn Cơ hội/Thách thức thuộc môi trường bên ngoài."
-                                            else -> "Mình ghi nhận câu hỏi của bạn và đang phân tích tài liệu tương ứng..."
-                                        }
-                                        chatMessages = chatMessages + Pair(true, userMsg) + Pair(false, aiResponse)
+                                    .clickable(enabled = !isAiTyping) {
+                                        viewModel.sendChatMessage(suggestion)
                                     }
                                     .padding(horizontal = 10.dp, vertical = 5.dp)
                             ) {
@@ -1864,7 +2364,7 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                                     text = suggestion,
                                     fontFamily = DmSansFamily,
                                     fontSize = 10.5.sp,
-                                    color = ColorTextOnLightSecondary
+                                    color = if (isAiTyping) ColorTextOnLightSecondary.copy(alpha = 0.5f) else ColorTextOnLightSecondary
                                 )
                             }
                         }
@@ -1888,7 +2388,9 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = ColorAmber,
                                 unfocusedBorderColor = ColorBorder
-                            )
+                            ),
+                            enabled = !isAiTyping,
+                            singleLine = true
                         )
 
                         Spacer(modifier = Modifier.width(8.dp))
@@ -1897,14 +2399,10 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
                             modifier = Modifier
                                 .size(46.dp)
                                 .clip(RoundedCornerShape(10.dp))
-                                .background(ColorAmber)
-                                .clickable {
-                                    if (messageQuery.trim().isNotEmpty()) {
-                                        val userText = messageQuery.trim()
-                                        val responseText = "Đã nhận câu hỏi: \"$userText\". Trợ lý AI đang quét qua toàn bộ tài liệu môn học của bạn để biên soạn câu trả lời dễ hiểu nhất. Vui lòng đợi trong giây lát!"
-                                        chatMessages = chatMessages + Pair(true, userText) + Pair(false, responseText)
-                                        messageQuery = ""
-                                    }
+                                .background(if (isAiTyping || messageQuery.trim().isEmpty()) ColorAmber.copy(alpha = 0.5f) else ColorAmber)
+                                .clickable(enabled = !isAiTyping && messageQuery.trim().isNotEmpty()) {
+                                    viewModel.sendChatMessage(messageQuery)
+                                    messageQuery = ""
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -1919,13 +2417,11 @@ fun StudyAiDialog(onDismiss: () -> Unit) {
 
 // ─── Notifications Dialog (Warm Editorial Tech) ──────────────────────────────────
 @Composable
-fun NotificationsDialog(onDismiss: () -> Unit) {
-    val notifications = listOf(
-        Triple("🏆 Thành tựu mới!", "Tài liệu \"Kinh tế vi mô — Chương 3: Cung & Cầu\" của bạn đạt mốc 100 lượt tải về! (+20 lượt sử dụng tài liệu 🧩)", "5 phút trước"),
-        Triple("🧠 Gợi ý từ AI", "Trợ lý AI khuyên bạn nên làm thử Quiz \"Marketing Mix\" để ôn tập chuẩn bị thi cuối kỳ.", "1 giờ trước"),
-        Triple("📚 Đóng góp cộng đồng", "Thành viên Aether vừa lưu tài liệu \"Marketing Mix — 4P\" của bạn vào thư viện cá nhân.", "3 giờ trước"),
-        Triple("🎁 Quà tặng người dùng", "Chào mừng bạn gia nhập EduVault! Bạn được tặng sẵn +1 lượt sử dụng tài liệu học tập.", "Hôm qua")
-    )
+fun NotificationsDialog(
+    onDismiss: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel()
+) {
+    val notifications by viewModel.notifications.collectAsState()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1990,7 +2486,10 @@ fun NotificationsDialog(onDismiss: () -> Unit) {
                             .height(280.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(notifications) { (title, content, time) ->
+                        items(notifications) { msg ->
+                            val title = msg.title
+                            val content = msg.content
+                            val time = msg.getFormattedTime()
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -2004,13 +2503,24 @@ fun NotificationsDialog(onDismiss: () -> Unit) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = title,
-                                        fontFamily = DmSansFamily,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = ColorInk
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (!msg.isRead) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(ColorAmberDark)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        }
+                                        Text(
+                                            text = title,
+                                            fontFamily = DmSansFamily,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = ColorInk
+                                        )
+                                    }
                                     Text(
                                         text = time,
                                         fontFamily = JetBrainsMonoFamily,
@@ -2062,7 +2572,7 @@ fun CreateQuizSetupDialog(
     quizViewModel: QuizViewModel,
     presetTitle: String,
     onDismiss: () -> Unit,
-    onConfirm: (docTitle: String, questionCount: Int, difficulty: Difficulty) -> Unit
+    onConfirm: (docTitle: String, questionCount: Int, difficulty: Difficulty, format: String) -> Unit
 ) {
     val availableDocs by quizViewModel.availableDocs.collectAsStateWithLifecycle()
 
@@ -2085,7 +2595,7 @@ fun CreateQuizSetupDialog(
                 ?: docTitles.firstOrNull() ?: ""
         )
     }
-    var selectedCount by remember { mutableStateOf(5) }
+    var selectedCount by remember { mutableIntStateOf(5) }
     var selectedDifficulty by remember { mutableStateOf(Difficulty.EASY) }
     val formatOptions = listOf("Trắc nghiệm", "Đúng / Sai", "Điền khuyết")
     var selectedFormat by remember { mutableStateOf("Trắc nghiệm") }
@@ -2355,7 +2865,7 @@ fun CreateQuizSetupDialog(
                                 .weight(1.3f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(ColorInk)
-                                .clickable { onConfirm(selectedDoc, selectedCount, selectedDifficulty) }
+                                .clickable { onConfirm(selectedDoc, selectedCount, selectedDifficulty, selectedFormat) }
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -2368,6 +2878,116 @@ fun CreateQuizSetupDialog(
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GUEST LOGIN PROMPT DIALOG — Hiển thị khi Guest cố dùng tính năng thành viên
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+fun GuestLoginPromptDialog(
+    onDismiss: () -> Unit,
+    onNavigateToLogin: () -> Unit,
+    onNavigateToRegister: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .clip(RoundedCornerShape(20.dp))
+                .background(ColorPaper)
+                .border(1.dp, ColorBorder, RoundedCornerShape(20.dp))
+                .padding(24.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(text = "🔐", fontSize = 36.sp)
+
+                Text(
+                    text = "Tính năng dành cho thành viên",
+                    fontFamily = PlayfairDisplayFamily,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = ColorInk,
+                    textAlign = TextAlign.Center
+                )
+
+                Text(
+                    text = "Đăng nhập để tải tài liệu lên, nhận Credit\nvà lưu tiến trình học tập của bạn.",
+                    fontFamily = DmSansFamily,
+                    fontSize = 13.sp,
+                    color = ColorTextOnLightSecondary,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 19.sp
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                // Login button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            Brush.horizontalGradient(listOf(ColorAmber, ColorAmberDark))
+                        )
+                        .clickable {
+                            onDismiss()
+                            onNavigateToLogin()
+                        }
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Đăng nhập",
+                        fontFamily = DmSansFamily,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = ColorInk
+                    )
+                }
+
+                // Register button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.5.dp, ColorInk.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .clickable {
+                            onDismiss()
+                            onNavigateToRegister()
+                        }
+                        .padding(vertical = 13.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Tạo tài khoản miễn phí",
+                        fontFamily = DmSansFamily,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp,
+                        color = ColorInk
+                    )
+                }
+
+                // Cancel
+                androidx.compose.material3.TextButton(onClick = onDismiss) {
+                    Text(
+                        text = "Để sau",
+                        fontFamily = DmSansFamily,
+                        fontSize = 13.sp,
+                        color = ColorTextOnLightSecondary
+                    )
                 }
             }
         }

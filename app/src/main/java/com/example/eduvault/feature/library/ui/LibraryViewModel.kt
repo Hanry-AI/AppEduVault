@@ -8,82 +8,122 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import com.example.eduvault.domain.repository.AuthRepository
+import com.example.eduvault.domain.repository.DocumentRepository
+import com.example.eduvault.domain.repository.CategoryRepository
+import com.example.eduvault.domain.repository.AiRepository
+import com.example.eduvault.domain.repository.NotificationRepository
+import com.example.eduvault.domain.model.NotificationType
+import com.example.eduvault.core.mock.MockDataProvider
+
+private const val PAGE_SIZE = 6
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val documentRepository: DocumentRepository,
+    private val categoryRepository: CategoryRepository,
+    private val aiRepository: AiRepository,
+    private val notificationRepository: NotificationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
 
+    private val _subjects = MutableStateFlow<List<String>>(listOf("Tất cả", "Kinh tế vi mô", "Marketing", "Thống kê", "Quản trị", "Kế toán", "Luật", "Lập trình"))
+    val subjects: StateFlow<List<String>> = _subjects.asStateFlow()
+
     private val allDocsList = mutableListOf<LibraryDoc>()
 
-    // ─── High fidelity mock data matching user screenshots ────────────────────
-    private val allMockDocs = listOf(
-        LibraryDoc("1", "EC0201", "Kinh tế vi mô — Tổng hợp lý thuyết cầu, cung & thị trường", LibraryDocType.NOTE, "42 tr", 4.8f, "2.1k", bgIndex = 0),
-        LibraryDoc("2", "MKT301", "Nguyên lý Marketing — Bộ câu hỏi luyện thi cuối kỳ", LibraryDocType.QUIZ, "30 câu", 4.9f, "3.4k", isSaved = true, bgIndex = 1),
-        LibraryDoc("3", "ACC101", "Kế toán tài chính — Slide bài giảng chương 5, 6, 7", LibraryDocType.SLIDE, "18 slides", 4.7f, "1.8k", bgIndex = 2),
-        LibraryDoc("4", "STAT202", "Thống kê ứng dụng — Công thức & bài tập mẫu chương 1-4", LibraryDocType.SUMMARY, "15 tr", 5.0f, "5.2k", isSaved = true, bgIndex = 3),
-        LibraryDoc("5", "MGT401", "Quản trị chiến lược — Phân tích SWOT, Porter & Case study", LibraryDocType.NOTE, "28 tr", 4.6f, "1.2k", bgIndex = 4),
-        LibraryDoc("6", "LAW201", "Luật kinh doanh — Ôn thi cuối kỳ dạng trắc nghiệm", LibraryDocType.QUIZ, "25 câu", 4.8f, "700", bgIndex = 5),
-        LibraryDoc("7", "FIN301", "Tài chính doanh nghiệp — Tổng hợp lý thuyết & bài tập có lời giải", LibraryDocType.NOTE, "36 tr", 4.9f, "4.1k", bgIndex = 0),
-        LibraryDoc("8", "EC0101", "Kinh tế học đại cương — Slide tổng hợp toàn bộ học kỳ", LibraryDocType.SLIDE, "24 slides", 4.5f, "950", bgIndex = 1),
-        LibraryDoc("9", "MKT201", "Hành vi người dùng — Tóm tắt lý thuyết chính yếu", LibraryDocType.SUMMARY, "10 tr", 4.7f, "2.3k", isSaved = true, bgIndex = 2)
-    )
+    // ─── High fidelity mock data from shared MockDataProvider ────────────────────
+    private val allMockDocs = MockDataProvider.allMockDocs
 
     init {
         allDocsList.addAll(allMockDocs)
         loadDocuments()
+        loadCategories()
         loadUserCredits()
     }
 
     fun loadDocuments() {
         viewModelScope.launch {
-            authRepository.getDocuments().onSuccess { firestoreDocs ->
+            documentRepository.getDocuments().onSuccess { firestoreDocs ->
                 allDocsList.clear()
                 allDocsList.addAll(allMockDocs)
                 val existingIds = allMockDocs.map { it.id }.toSet()
                 val uniqueFirestoreDocs = firestoreDocs.filter { it.id !in existingIds }
                 allDocsList.addAll(uniqueFirestoreDocs)
-                filterAndSortDocs()
+                syncSavedStatusAndFilter()
             }.onFailure {
-                filterAndSortDocs()
+                syncSavedStatusAndFilter()
             }
         }
     }
 
+    fun loadCategories() {
+        viewModelScope.launch {
+            categoryRepository.getCategories().onSuccess { cats ->
+                val list = listOf("Tất cả") + cats.map { it.name }
+                _subjects.update { list }
+                filterAndSortDocs()
+            }
+        }
+    }
 
     fun loadUserCredits() {
         viewModelScope.launch {
             authRepository.getCurrentUser().onSuccess { user ->
                 _uiState.update { 
                     it.copy(
-                        documentCredits = user?.documentCredits ?: 1,
-                        uploadCount = user?.uploadCount ?: 0
+                        documentCredits = user?.documentCredits ?: -1,
+                        uploadCount = user?.uploadCount ?: 0,
+                        unlockedDocuments = user?.unlockedDocuments ?: emptyList(),
+                        savedDocuments = user?.savedDocuments ?: emptyList()
                     )
                 }
+                syncSavedStatusAndFilter()
             }
         }
     }
 
     /**
-     * Trừ credit khi mở tài liệu.
+     * Mở tài liệu mà không lập tức trừ credit (trừ credit chỉ diễn ra khi bấm nút Mở khóa).
      */
     fun onOpenDocument(docId: String, onAllowed: () -> Unit, onBlocked: () -> Unit) {
+        onAllowed()
+    }
+
+    /**
+     * Thực hiện trừ credit thật từ Firestore và lưu document đã mua.
+     */
+    fun unlockDocument(docId: String, onResult: (Result<com.example.eduvault.domain.model.User>) -> Unit) {
         viewModelScope.launch {
-            authRepository.consumeCredit().onSuccess { user ->
+            authRepository.unlockDocument(docId).onSuccess { user ->
                 _uiState.update {
                     it.copy(
                         documentCredits = user.documentCredits,
-                        uploadCount = user.uploadCount
+                        uploadCount = user.uploadCount,
+                        unlockedDocuments = user.unlockedDocuments
                     )
                 }
-                onAllowed()
-            }.onFailure {
-                onBlocked()
+                onResult(Result.success(user))
+            }.onFailure { err ->
+                onResult(Result.failure(err))
+            }
+        }
+    }
+
+    /**
+     * Báo cáo tài liệu khiếm nhã hoặc vi phạm.
+     */
+    fun reportDocument(docId: String, onSuccess: () -> Unit, onFailure: (String) -> Unit) {
+        viewModelScope.launch {
+            documentRepository.reportDocument(docId).onSuccess {
+                onSuccess()
+            }.onFailure { error ->
+                onFailure(error.localizedMessage ?: "Lỗi chưa rõ")
             }
         }
     }
@@ -106,7 +146,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun onSortSelected(sort: SortType) {
-        _uiState.update { it.copy(selectedSort = sort) }
+        _uiState.update { it.copy(selectedSort = sort, currentPage = 1) }
         filterAndSortDocs()
     }
 
@@ -117,6 +157,7 @@ class LibraryViewModel @Inject constructor(
 
     fun onPageSelected(page: Int) {
         _uiState.update { it.copy(currentPage = page) }
+        filterAndSortDocs()
     }
 
     fun onToggleViewMode() {
@@ -124,12 +165,45 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun onToggleSaved(docId: String) {
-        _uiState.update { state ->
-            val updatedDocs = state.documents.map { doc ->
-                if (doc.id == docId) doc.copy(isSaved = !doc.isSaved) else doc
+        viewModelScope.launch {
+            // Sửa bug code gốc: tìm và toggle isSaved trong allDocsList RAM ngay lập tức để phản hồi nhanh
+            val index = allDocsList.indexOfFirst { it.id == docId }
+            if (index != -1) {
+                val doc = allDocsList[index]
+                allDocsList[index] = doc.copy(isSaved = !doc.isSaved)
             }
-            state.copy(documents = updatedDocs)
+            filterAndSortDocs()
+
+            // Thực hiện ghi nhận bookmark thật lên database Firestore
+            authRepository.toggleSaveDocument(docId).onSuccess { user ->
+                _uiState.update { 
+                    it.copy(
+                        savedDocuments = user.savedDocuments
+                    )
+                }
+                syncSavedStatusAndFilter()
+            }.onFailure {
+                // Nếu lưu database thất bại (ví dụ: Guest hoặc mất mạng), ta rollback lại RAM
+                val idx = allDocsList.indexOfFirst { it.id == docId }
+                if (idx != -1) {
+                    val doc = allDocsList[idx]
+                    allDocsList[idx] = doc.copy(isSaved = !doc.isSaved)
+                }
+                filterAndSortDocs()
+            }
         }
+    }
+
+    private fun syncSavedStatusAndFilter() {
+        val savedIds = _uiState.value.savedDocuments.toSet()
+        for (i in allDocsList.indices) {
+            val doc = allDocsList[i]
+            val currentFirebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            if (currentFirebaseUser != null) {
+                allDocsList[i] = doc.copy(isSaved = doc.id in savedIds)
+            }
+        }
+        filterAndSortDocs()
     }
 
     // ─── Helper filter & sort logic ───────────────────────────────────────────
@@ -147,15 +221,18 @@ class LibraryViewModel @Inject constructor(
                         doc.title.lowercase().contains(query) ||
                         doc.courseCode.lowercase().contains(query)
                 
-                val matchesSubject = subject == "Tất cả" || when (subject) {
-                    "Kinh tế vi mô" -> doc.courseCode.contains("EC")
-                    "Marketing" -> doc.courseCode.contains("MKT")
-                    "Kế toán" -> doc.courseCode.contains("ACC")
-                    "Thống kê" -> doc.courseCode.contains("STAT")
-                    "Quản trị" -> doc.courseCode.contains("MGT")
-                    "Luật" -> doc.courseCode.contains("LAW")
-                    else -> true
-                }
+                val matchesSubject = subject == "Tất cả" || 
+                        doc.title.contains(subject, ignoreCase = true) ||
+                        doc.courseCode.contains(subject, ignoreCase = true) ||
+                        when (subject) {
+                            "Kinh tế vi mô", "Kinh tế học" -> doc.courseCode.contains("EC", ignoreCase = true)
+                            "Marketing" -> doc.courseCode.contains("MKT", ignoreCase = true)
+                            "Kế toán" -> doc.courseCode.contains("ACC", ignoreCase = true)
+                            "Thống kê" -> doc.courseCode.contains("STAT", ignoreCase = true)
+                            "Quản trị" -> doc.courseCode.contains("MGT", ignoreCase = true)
+                            "Luật", "Pháp luật" -> doc.courseCode.contains("LAW", ignoreCase = true)
+                            else -> false
+                        }
 
                 val matchesType = typeFilter == DocTypeFilter.ALL || when (typeFilter) {
                     DocTypeFilter.NOTE -> doc.type == LibraryDocType.NOTE
@@ -175,13 +252,219 @@ class LibraryViewModel @Inject constructor(
                 SortType.RATING -> filtered.sortedByDescending { it.rating }
             }
 
+            val actualDocsCount = allDocsList.size
+            val actualSubjectsCount = _subjects.value.size - 1 // loại trừ "Tất cả"
+            val savedCount = allDocsList.count { it.isSaved }
+
+            val currentPageVal = _uiState.value.currentPage
+            val totalCountVal = filtered.size
+            val totalPagesVal = if (totalCountVal == 0) 1 else (totalCountVal + PAGE_SIZE - 1) / PAGE_SIZE
+            val safePage = if (currentPageVal < 1) 1 else if (currentPageVal > totalPagesVal) totalPagesVal else currentPageVal
+
+            val startIndex = (safePage - 1) * PAGE_SIZE
+            val slicedDocs = filtered.drop(startIndex).take(PAGE_SIZE)
+
             _uiState.update {
                 it.copy(
-                    documents = filtered,
-                    totalCount = filtered.size,
-                    totalPages = if (filtered.isEmpty()) 1 else (filtered.size + 5) / 6 // mock pagination size
+                    documents = slicedDocs,
+                    totalCount = totalCountVal,
+                    totalPages = totalPagesVal,
+                    currentPage = safePage,
+                    bannerTotalDocs = actualDocsCount,
+                    bannerTotalSubjects = if (actualSubjectsCount > 0) actualSubjectsCount else 0,
+                    bannerTotalSaved = savedCount
                 )
             }
+        }
+    }
+
+    /**
+     * Tự động sinh tóm tắt thông minh (Smart Summary) cho tài liệu bằng Gemini AI.
+     * - Áp dụng cơ chế Firestore Caching & Versioning để tiết kiệm 100% token ở các lần đọc sau.
+     */
+    fun generateDocumentSummary(
+        docId: String,
+        docTitle: String,
+        docType: String,
+        content: String,
+        onResult: (Result<String>) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                val docRef = firestore.collection("documents").document(docId)
+
+                // 1. Kiểm tra Cache & Version trong Firestore
+                val snap = docRef.get().await()
+                if (snap.exists()) {
+                    val cachedSummary = snap.getString("aiSummary") ?: ""
+                    val cachedVersion = snap.getLong("aiSummaryVersion") ?: 0L
+                    if (cachedSummary.trim().isNotEmpty() && cachedVersion == 1L) {
+                        // Trả về trực tiếp từ cache Firestore
+                        onResult(Result.success(cachedSummary))
+                        return@launch
+                    }
+                }
+
+                // 2. Gọi Gemini sinh tóm tắt mới nếu chưa có hoặc sai phiên bản
+                val contentToUse = if (content.trim().isNotEmpty()) content else {
+                    "Tài liệu môn học $docTitle ôn tập học thuật đại cương và chuyên ngành."
+                }
+
+                aiRepository.generateSummaryFromDocument(
+                    title = docTitle,
+                    type = docType,
+                    content = contentToUse
+                ).onSuccess { generatedSummary ->
+                    // Sinh thông báo sự kiện tạo tóm tắt thông minh thành công thực tế lưu vào Firestore
+                    viewModelScope.launch {
+                        authRepository.getCurrentUser().onSuccess { user ->
+                            if (user != null) {
+                                notificationRepository.addNotification(
+                                    userId = user.uid,
+                                    title = "✨ Tóm tắt thông minh",
+                                    content = "Bản tóm tắt kiến thức bằng AI cho tài liệu '${docTitle}' đã được sinh thành công!",
+                                    type = NotificationType.AI
+                                )
+                            }
+                        }
+                    }
+
+                    // 3. Ghi ngược lại Firestore cache kèm version = 1
+                    try {
+                        docRef.update(
+                            mapOf(
+                                "aiSummary" to generatedSummary,
+                                "aiSummaryVersion" to 1L
+                            )
+                        ).await()
+                    } catch (cacheErr: Exception) {
+                        android.util.Log.e("LibraryViewModel", "Không thể lưu cache AI summary: ${cacheErr.localizedMessage}")
+                    }
+                    onResult(Result.success(generatedSummary))
+                }.onFailure { err ->
+                    onResult(Result.failure(err))
+                }
+            } catch (e: Exception) {
+                onResult(Result.failure(e))
+            }
+        }
+    }
+
+    /**
+     * Hỏi đáp trực tiếp về tài liệu cụ thể bằng Gemini AI.
+     */
+    fun askAiAboutDocument(
+        docTitle: String,
+        docType: String,
+        content: String,
+        question: String,
+        onResult: (Result<String>) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val contentToUse = if (content.trim().isNotEmpty()) content else {
+                    "Tài liệu môn học $docTitle ôn tập học thuật đại cương và chuyên ngành."
+                }
+                aiRepository.askAiAboutDocument(
+                    title = docTitle,
+                    type = docType,
+                    content = contentToUse,
+                    question = question
+                ).onSuccess { answer ->
+                    onResult(Result.success(answer))
+                }.onFailure { err ->
+                    onResult(Result.failure(err))
+                }
+            } catch (e: Exception) {
+                onResult(Result.failure(e))
+            }
+        }
+    }
+
+    /**
+     * Tải nội dung chi tiết động cho 3 tab của DocViewer.
+     * Quy trình: Kiểm tra cache ở Repository -> Nếu có thì nạp luôn -> Nếu không có thì gọi Gemini sinh -> Lưu cache ngầm.
+     */
+    fun loadDocViewerContent(
+        docId: String,
+        docTitle: String,
+        docCourseCode: String,
+        docTypeLabel: String
+    ) {
+        viewModelScope.launch {
+            _uiState.update { 
+                it.copy(
+                    isLoadingDocContent = true, 
+                    docContentError = null,
+                    activeDocContent = null
+                ) 
+            }
+
+            // Bước 1: Gọi Repository lấy Cache
+            documentRepository.getCachedDocViewerContent(docId).onSuccess { cachedContent ->
+                if (cachedContent != null) {
+                    // Trả về cache nhanh chóng
+                    _uiState.update {
+                        it.copy(
+                            isLoadingDocContent = false,
+                            activeDocContent = cachedContent
+                        )
+                    }
+                } else {
+                    // Không có cache -> Chuyển sang Bước 2: Gọi Gemini sinh
+                    generateDocContentFromAi(docId, docTitle, docCourseCode, docTypeLabel)
+                }
+            }.onFailure { err ->
+                // Firestore/Network cache lỗi -> Ghi log cảnh báo nhưng vẫn gọi Gemini để đảm bảo trải nghiệm tốt nhất
+                android.util.Log.w("LibraryViewModel", "Lỗi đọc cache Firestore: ${err.localizedMessage}")
+                generateDocContentFromAi(docId, docTitle, docCourseCode, docTypeLabel)
+            }
+        }
+    }
+
+    private suspend fun generateDocContentFromAi(
+        docId: String,
+        docTitle: String,
+        docCourseCode: String,
+        docTypeLabel: String
+    ) {
+        aiRepository.generateDocViewerContent(
+            title = docTitle,
+            courseCode = docCourseCode,
+            type = docTypeLabel
+        ).onSuccess { generatedContent ->
+            // Cập nhật State UI lập tức
+            _uiState.update {
+                it.copy(
+                    isLoadingDocContent = false,
+                    activeDocContent = generatedContent
+                )
+            }
+
+            // Ghi đè cache ngầm vào Firestore (không chặn luồng UI của người dùng, có bắt lỗi bằng Log.w)
+            viewModelScope.launch {
+                documentRepository.saveDocViewerContent(docId, generatedContent).onFailure { cacheErr ->
+                    android.util.Log.w("LibraryViewModel", "Không thể cập nhật cache Firestore cho tài liệu $docId: ${cacheErr.localizedMessage}")
+                }
+            }
+        }.onFailure { err ->
+            _uiState.update {
+                it.copy(
+                    isLoadingDocContent = false,
+                    docContentError = err.localizedMessage ?: "Lỗi nạp nội dung từ AI"
+                )
+            }
+        }
+    }
+
+    fun clearDocViewerContent() {
+        _uiState.update {
+            it.copy(
+                activeDocContent = null,
+                isLoadingDocContent = false,
+                docContentError = null
+            )
         }
     }
 }

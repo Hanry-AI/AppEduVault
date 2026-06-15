@@ -1,3 +1,5 @@
+import java.util.Properties
+import java.io.FileInputStream
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -20,6 +22,17 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Read GEMINI_API_KEY from local.properties for safe Hilt/BuildConfig injection
+        val localProperties = Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            val stream = FileInputStream(localPropertiesFile)
+            localProperties.load(stream)
+            stream.close()
+        }
+        val geminiApiKey = localProperties.getProperty("GEMINI_API_KEY") ?: ""
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
     }
 
     buildTypes {
@@ -73,6 +86,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.firebase.storage)
     implementation(libs.googleid)
 
     implementation(libs.kotlinx.coroutines.core)
@@ -85,8 +99,11 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
+    implementation(libs.firebase.storage)
+    implementation(libs.generativeai)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -97,11 +97,15 @@ import com.example.eduvault.core.theme.DmSansFamily
 import com.example.eduvault.core.theme.EduVaultTheme
 import com.example.eduvault.core.theme.JetBrainsMonoFamily
 import com.example.eduvault.core.theme.PlayfairDisplayFamily
+import com.example.eduvault.domain.model.DocReaderState
+import com.example.eduvault.domain.model.DocViewerTabsContent
 
 @Composable
 fun LibraryContent(
     paddingValues: PaddingValues,
     onUploadClick: () -> Unit,
+    onNavigateToLogin: () -> Unit = {},
+    onNavigateToRegister: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -1314,8 +1318,54 @@ fun CreditBlockDialog(
 @Composable
 fun DocViewerDialog(
     doc: LibraryDoc,
-    onDismiss: () -> Unit
+    readerState: DocReaderState = DocReaderState.Unlocked,
+    activeContent: DocViewerTabsContent? = null,
+    isLoadingContent: Boolean = false,
+    contentError: String? = null,
+    onRetryLoadContent: () -> Unit = {},
+    onDismiss: () -> Unit,
+    onReportClick: () -> Unit = {},
+    onNavigateToLogin: () -> Unit = {},
+    onNavigateToRegister: () -> Unit = {},
+    onUnlockWithCredit: () -> Unit = {},
+    onGenerateSummary: (suspend () -> Result<String>)? = null,
+    onNoteClick: ((LibraryDoc) -> Unit)? = null
 ) {
+    val state = readerState
+    // Determine which content to show
+    val displayContent = when {
+        state is DocReaderState.GuestLocked -> "Bạn cần đăng nhập để xem tài liệu này."
+        state is DocReaderState.NoCredits -> "Bạn đã hết credit. Hãy upload tài liệu để nhận thêm credit."
+        state is DocReaderState.HasCredits -> "Sử dụng ${state.count} credit để mở khóa tài liệu này."
+        isLoadingContent -> "Đang tải nội dung..."
+        contentError != null -> "Lỗi: $contentError"
+        activeContent != null -> activeContent.content
+        else -> """
+            KHOA HỌC LIỆU ĐẠI HỌC - EDUVAULT
+            ----------------------------------------
+            Tài liệu: ${doc.title}
+            Mã môn học: ${doc.courseCode}
+            Phân loại: ${doc.type.label}
+            Lượt xem tích lũy: ${doc.views}
+            Đánh giá: ${doc.rating} ★
+            
+            PHẦN 1: NỘI DUNG TỔNG QUAN
+            Trong học phần này, chúng ta sẽ đi sâu tìm hiểu các khái niệm nền tảng quan trọng nhất.
+            
+            PHẦN 2: CÁC KHÁI NIỆM TRỌNG TÂM
+            1. Định nghĩa và Bản chất
+            2. Cơ cấu phân tích
+            3. Case study thực tế
+            
+            PHẦN 3: LUYỆN TẬP & CỦNG CỐ
+            Cuối mỗi chương đều đi kèm bộ câu hỏi trắc nghiệm tự luyện.
+        """.trimIndent()
+    }
+
+    val isLocked = state is DocReaderState.GuestLocked || 
+                   state is DocReaderState.NoCredits || 
+                   state is DocReaderState.HasCredits
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -1343,6 +1393,7 @@ fun DocViewerDialog(
                 elevation = androidx.compose.material3.CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
+                    // Header row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1389,54 +1440,141 @@ fun DocViewerDialog(
                             .padding(16.dp)
                             .verticalScroll(rememberScrollState())
                     ) {
-                        Text(
-                            text = """
-                                KHOA HỌC LIỆU ĐẠI HỌC - EDUVAULT
-                                ----------------------------------------
-                                Tài liệu: ${doc.title}
-                                Mã môn học: ${doc.courseCode}
-                                Phân loại: ${doc.type.label}
-                                Lượt xem tích lũy: ${doc.views}
-                                Đánh giá: ${doc.rating} ★
-                                
-                                PHẦN 1: NỘI DUNG TỔNG QUAN
-                                Trong học phần này, chúng ta sẽ đi sâu tìm hiểu các khái niệm nền tảng quan trọng nhất. Sự hiểu biết vững chắc về lý thuyết cơ bản sẽ giúp sinh viên dễ dàng giải quyết các bài tập thực hành phức tạp và các câu hỏi tình huống trong bài thi cuối kỳ.
-                                
-                                PHẦN 2: CÁC KHÁI NIỆM TRỌNG TÂM
-                                1. Định nghĩa và Bản chất: Định nghĩa rõ ràng phạm vi nghiên cứu, các nhân tố ảnh hưởng trực tiếp và gián tiếp đến đối tượng nghiên cứu chính.
-                                2. Cơ cấu phân tích: Mô hình hóa lý thuyết bằng sơ đồ tư duy hoặc đồ thị trực quan (đối với môn Kinh tế học, Tài chính).
-                                3. Case study thực tế: Ví dụ minh họa thực tiễn từ các tập đoàn đa quốc gia và nền kinh tế Việt Nam giúp liên hệ bài học vào thực tế sâu sắc.
-                                
-                                PHẦN 3: LUYỆN TẬP & CỦNG CỐ
-                                Cuối mỗi chương đều đi kèm bộ câu hỏi trắc nghiệm tự luyện (đáp án chi tiết giải thích ở trang cuối). Khuyến khích sinh viên tự làm trước khi xem giải thích chi tiết.
-                                
-                                Chúc các bạn học tập tốt và đạt kết quả cao cùng StudyHive & EduVault!
-                            """.trimIndent(),
-                            fontFamily = DmSansFamily,
-                            fontSize = 12.sp,
-                            color = ColorInk,
-                            lineHeight = 18.sp
-                        )
+                        if (isLoadingContent) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    color = ColorForest,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = displayContent,
+                                fontFamily = DmSansFamily,
+                                fontSize = 12.sp,
+                                color = ColorInk,
+                                lineHeight = 18.sp
+                            )
+                        }
+                    }
+
+                    // Error + Retry
+                    if (contentError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(ColorAmberLight)
+                                .clickable { onRetryLoadContent() }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Thử lại",
+                                fontFamily = DmSansFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = ColorInk
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(ColorForest)
-                            .clickable { onDismiss() }
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Đã đọc xong",
-                            fontFamily = DmSansFamily,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            color = Color.White
-                        )
+                    // Locked states: show appropriate actions
+                    if (isLocked) {
+                        when (state) {
+                            is DocReaderState.GuestLocked -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(ColorForest)
+                                            .clickable { onNavigateToLogin() }
+                                            .padding(vertical = 12.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("Đăng nhập", fontFamily = DmSansFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .border(1.dp, ColorForest, RoundedCornerShape(10.dp))
+                                            .clickable { onNavigateToRegister() }
+                                            .padding(vertical = 12.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("Đăng ký", fontFamily = DmSansFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = ColorForest)
+                                    }
+                                }
+                            }
+                            is DocReaderState.HasCredits -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(ColorForest)
+                                        .clickable { onUnlockWithCredit() }
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Mở khóa (${state.count} credit)",
+                                        fontFamily = DmSansFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                            is DocReaderState.NoCredits -> {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(ColorAmber)
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Hết credit – Upload tài liệu để nhận thêm",
+                                        fontFamily = DmSansFamily,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = ColorInk
+                                    )
+                                }
+                            }
+                            else -> { /* Unlocked – nothing to show */ }
+                        }
+                    } else {
+                        // Unlocked: show "Đã đọc xong" button
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(ColorForest)
+                                .clickable { onDismiss() }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Đã đọc xong",
+                                fontFamily = DmSansFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }

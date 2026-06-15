@@ -113,6 +113,25 @@ class RegisterViewModel @Inject constructor(
         _uiState.update { it.copy(registerError = null) }
     }
 
+    fun loginWithGoogle(idToken: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, registerError = null) }
+            authRepository.loginWithGoogle(idToken)
+                .onSuccess {
+                    _uiState.update { it.copy(isLoading = false, isRegisterSuccess = true) }
+                }
+                .onFailure { exception ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            registerError = exception.message ?: "Đăng ký Google thất bại"
+                        )
+                    }
+                }
+        }
+    }
+
+
     // ─── Private helpers ──────────────────────────────────────────────────────
 
     private fun validateInputs(): Boolean {

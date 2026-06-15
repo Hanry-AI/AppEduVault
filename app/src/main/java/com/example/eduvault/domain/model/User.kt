@@ -13,4 +13,11 @@ data class User(
     val documentCredits: Int = 1,
     val uploadCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
+    val role: String = "user",
+    val isBlocked: Boolean = false,
+    val unlockedDocuments: List<String> = emptyList(),
+    val quizCount: Int = 0,
+    val quizAverageScore: Float = 0.0f,
+    val totalXp: Int = 0,
+    val savedDocuments: List<String> = emptyList(),
 )

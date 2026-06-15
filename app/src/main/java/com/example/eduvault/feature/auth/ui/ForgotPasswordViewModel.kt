@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import androidx.core.net.toUri
 
 import com.example.eduvault.domain.repository.AuthRepository
 
@@ -44,6 +45,53 @@ class ForgotPasswordViewModel @Inject constructor(
         }
     }
 
+    fun onLinkInputChange(link: String) {
+        _uiState.update { it.copy(linkInput = link, errorMessage = null) }
+        val parsedUri = try {
+            link.toUri()
+        } catch (e: Exception) {
+            null
+        }
+        val oobCode = parsedUri?.getQueryParameter("oobCode")
+
+        if (oobCode != null) {
+            viewModelScope.launch {
+                _uiState.update { it.copy(isLoading = true) }
+                authRepository.verifyPasswordResetCode(oobCode)
+                    .onSuccess { email ->
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                isRealLinkValid = true,
+                                verifiedEmail = email,
+                                oobCode = oobCode,
+                                otp = "888888", // Mã OTP tượng trưng cho thật
+                                otpError = null
+                            )
+                        }
+                    }
+                    .onFailure { exception ->
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                isRealLinkValid = false,
+                                oobCode = null,
+                                errorMessage = exception.message ?: "Mã khôi phục đã hết hạn hoặc không hợp lệ. Vui lòng gửi lại yêu cầu."
+                            )
+                        }
+                    }
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    isRealLinkValid = false,
+                    oobCode = null,
+                    verifiedEmail = null
+                )
+            }
+        }
+    }
+
     /**
      * Bước 1: Gửi email đặt lại mật khẩu của Firebase Auth.
      */
@@ -61,6 +109,10 @@ class ForgotPasswordViewModel @Inject constructor(
                             isLoading = false,
                             isOtpSent = true,
                             otp = "",
+                            linkInput = "",
+                            isRealLinkValid = false,
+                            verifiedEmail = null,
+                            oobCode = null,
                             hasAttemptedVerify = false,
                         )
                     }
@@ -80,11 +132,17 @@ class ForgotPasswordViewModel @Inject constructor(
     /**
      * Bước 2: Xác nhận OTP người dùng nhập.
      * Lưu ý: Vì Firebase Auth gửi link đặt lại mật khẩu trực tiếp qua Email nên không dùng OTP số.
-     * Để giữ nguyên thiết kế UI đẹp mắt của bạn, hệ thống chấp nhận mã OTP demo và cho phép chuyển tiếp
-     * sang trang đặt lại mật khẩu mới. Đồng thời người dùng cũng nhận được email khôi phục thật.
+     * Hệ thống hỗ trợ chế độ Demo OTP 6 số và dán Link khôi phục thật để khôi phục mật khẩu 100%.
      */
     fun onVerifyOtpClick() {
         _uiState.update { it.copy(hasAttemptedVerify = true) }
+        
+        // Nếu dán link khôi phục thật hợp lệ -> Cho đi tiếp ngay
+        if (_uiState.value.isRealLinkValid) {
+            _uiState.update { it.copy(isVerifySuccess = true) }
+            return
+        }
+
         if (!validateOtp()) return
 
         viewModelScope.launch {

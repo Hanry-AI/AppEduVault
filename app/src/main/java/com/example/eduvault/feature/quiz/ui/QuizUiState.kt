@@ -95,5 +95,6 @@ data class QuizUiState(
     val answersMap: Map<Int, String?> = emptyMap(), // Ánh xạ từ chỉ mục câu hỏi -> đáp án đã chọn
     val correctAnswersCount: Int = 0,
     val timeSpentSeconds: Int = 0, // Tổng thời gian đã làm bài
-    val xpEarned: Int = 0
+    val xpEarned: Int = 0,
+    val quizFormat: String = "Trắc nghiệm" // Hình thức câu hỏi: "Trắc nghiệm" | "Đúng / Sai" | "Điền khuyết"
 )

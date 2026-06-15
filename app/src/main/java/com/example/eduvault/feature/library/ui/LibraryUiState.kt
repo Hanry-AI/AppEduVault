@@ -16,7 +16,19 @@ data class LibraryUiState(
     val isLoading: Boolean = false,
     val documentCredits: Int = 1,
     val uploadCount: Int = 0,
-    val documents: List<LibraryDoc> = emptyList()
+    val unlockedDocuments: List<String> = emptyList(),
+    val documents: List<LibraryDoc> = emptyList(),
+    val savedDocuments: List<String> = emptyList(),
+    
+    // Dynamic Banner Stats
+    val bannerTotalDocs: Int = 0,
+    val bannerTotalSubjects: Int = 0,
+    val bannerTotalSaved: Int = 0,
+    
+    // DocViewer Dynamic Content State
+    val activeDocContent: com.example.eduvault.domain.model.DocViewerTabsContent? = null,
+    val isLoadingDocContent: Boolean = false,
+    val docContentError: String? = null
 )
 
 enum class SortType(val label: String) {
@@ -50,5 +62,9 @@ data class LibraryDoc(
     val rating: Float,
     val views: String, // e.g. "2.1k", "700"
     val isSaved: Boolean = false,
-    val bgIndex: Int = 0
+    val bgIndex: Int = 0,
+    val aiVerified: Boolean = false,
+    val aiCheckResult: String = "",
+    val status: String = "APPROVED",
+    val reportCount: Int = 0
 )
