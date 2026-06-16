@@ -471,36 +471,18 @@ class QuizViewModel @Inject constructor(
     )
 
     init {
-        // Tải danh sách bộ đề ban đầu
-        allQuizSetsList.addAll(allMockQuizSets)
-        _uiState.update {
-            it.copy(
-                quizSets = allQuizSetsList,
-                leaderboard = mockLeaderboard
-            )
-        }
         loadAvailableDocuments()
         loadQuizSets()
         loadLeaderboard()
+        loadUserStats()
     }
 
     fun loadAvailableDocuments() {
         viewModelScope.launch {
-            val baselineMockDocs = listOf(
-                com.example.eduvault.feature.library.ui.LibraryDoc("m1", "EC0201", "Kinh tế vi mô — Chương 3: Cung & Cầu", com.example.eduvault.feature.library.ui.LibraryDocType.NOTE, "42 tr", 4.8f, "2.1k", bgIndex = 0),
-                com.example.eduvault.feature.library.ui.LibraryDoc("m2", "MKT301", "Nguyên lý Marketing — 4P Framework", com.example.eduvault.feature.library.ui.LibraryDocType.QUIZ, "30 câu", 4.9f, "3.4k", bgIndex = 1),
-                com.example.eduvault.feature.library.ui.LibraryDoc("m3", "ACC101", "Toán Kinh tế — Giải tích & Mẫu số", com.example.eduvault.feature.library.ui.LibraryDocType.SLIDE, "18 slides", 4.7f, "1.8k", bgIndex = 2),
-                com.example.eduvault.feature.library.ui.LibraryDoc("m4", "LAW101", "Pháp luật đại cương — Hệ thống văn bản pháp luật", com.example.eduvault.feature.library.ui.LibraryDocType.SUMMARY, "15 tr", 5.0f, "5.2k", bgIndex = 3),
-                com.example.eduvault.feature.library.ui.LibraryDoc("m5", "FIN301", "Tài chính doanh nghiệp — Bài tập giá trị thời gian", com.example.eduvault.feature.library.ui.LibraryDocType.NOTE, "28 tr", 4.6f, "1.2k", bgIndex = 4)
-            )
-            _availableDocs.value = baselineMockDocs
-            
             documentRepository.getDocuments().onSuccess { firestoreDocs ->
-                val combined = baselineMockDocs.toMutableList()
-                val existingIds = baselineMockDocs.map { it.id }.toSet()
-                val uniqueFirestoreDocs = firestoreDocs.filter { it.id !in existingIds }
-                combined.addAll(uniqueFirestoreDocs)
-                _availableDocs.value = combined
+                _availableDocs.value = firestoreDocs
+            }.onFailure {
+                _availableDocs.value = emptyList()
             }
         }
     }
@@ -511,11 +493,7 @@ class QuizViewModel @Inject constructor(
                 val localAiSets = allQuizSetsList.filter { it.id.startsWith("ai_") }
                 allQuizSetsList.clear()
                 allQuizSetsList.addAll(localAiSets)
-                
-                val existingIds = allMockQuizSets.map { it.id }.toSet()
-                val uniqueFirestoreSets = firestoreSets.filter { it.id !in existingIds }
-                allQuizSetsList.addAll(uniqueFirestoreSets)
-                allQuizSetsList.addAll(allMockQuizSets)
+                allQuizSetsList.addAll(firestoreSets)
                 
                 _uiState.update { state ->
                     val filtered = if (state.selectedSubject == "Tất cả") {
@@ -529,7 +507,6 @@ class QuizViewModel @Inject constructor(
                 val localAiSets = allQuizSetsList.filter { it.id.startsWith("ai_") }
                 allQuizSetsList.clear()
                 allQuizSetsList.addAll(localAiSets)
-                allQuizSetsList.addAll(allMockQuizSets)
                 
                 _uiState.update { state ->
                     val filtered = if (state.selectedSubject == "Tất cả") {
@@ -556,17 +533,13 @@ class QuizViewModel @Inject constructor(
 
                 // 3. Map Firestore users sang LeaderboardUser
                 val realLeaderboardUsers = allUsers.map { u ->
-                    // Công thức tính điểm: score = credits * 1000 + uploads * 500
-                    val score = u.documentCredits * 1000 + u.uploadCount * 500
+                    // Sử dụng totalXp thực tế của user
+                    val score = u.totalXp
                     
                     val isMe = currentUser != null && u.uid == currentUser.uid
-                    val displayName = if (isMe) {
-                        if (u.fullName.isNotEmpty()) "${u.fullName} (Tôi)" else "Gamer (Tôi)"
-                    } else {
-                        if (u.fullName.isNotEmpty()) u.fullName else "Học viên ẩn danh"
-                    }
+                    val displayName = if (u.fullName.isNotEmpty()) u.fullName else "Học viên ẩn danh"
                     
-                    val universityName = if (u.university.isNotEmpty()) u.university else "Đại học đối tác"
+                    val universityName = u.university.ifEmpty { "" }
                     
                     LeaderboardUser(
                         rank = 0, // rank sẽ tính động sau khi sort
@@ -577,40 +550,11 @@ class QuizViewModel @Inject constructor(
                     )
                 }
 
-                // 4. Các đối thủ mẫu (competitors) để tạo không khí cạnh tranh
-                val mockCompetitors = listOf(
-                    LeaderboardUser(0, "Nguyễn Văn Anh", "Đại học Bách Khoa", 12450),
-                    LeaderboardUser(0, "Trần Thị Bình", "Đại học Kinh tế Quốc dân", 11200),
-                    LeaderboardUser(0, "Lê Hoàng Cường", "Đại học Ngoại thương", 9850),
-                    LeaderboardUser(0, "Phạm Minh Đức", "Đại học FPT", 9100),
-                    LeaderboardUser(0, "Đỗ Thanh Hải", "Đại học Quốc gia", 8600)
-                )
-
-                // Lọc bỏ những competitor mock bị trùng tên thật của user
-                val realNames = realLeaderboardUsers.map { it.name.replace(" (Tôi)", "") }.toSet()
-                val filteredMockCompetitors = mockCompetitors.filter { mockUser ->
-                    mockUser.name !in realNames
-                }
-
-                // Kết hợp real users và mock competitors
-                val combinedList = realLeaderboardUsers.toMutableList()
-                
-                // Chèn thêm competitor mock sao cho tối thiểu có 6 dòng trên bảng xếp hạng
-                for (competitor in filteredMockCompetitors) {
-                    if (combinedList.size >= 6) break
-                    combinedList.add(competitor)
-                }
-                
-                // Nếu sau khi chèn vẫn chưa đủ 6 dòng, chèn thêm các mock còn lại
-                if (combinedList.size < 6) {
-                    for (competitor in filteredMockCompetitors) {
-                        if (combinedList.any { it.name == competitor.name }) continue
-                        combinedList.add(competitor)
-                    }
-                }
+                // 4. Lọc ra: chỉ hiện user có XP >= 1, hoặc là chính mình (luôn hiện)
+                val filteredList = realLeaderboardUsers.filter { it.score >= 1 || it.isMe }
 
                 // 5. Sắp xếp giảm dần theo điểm số score
-                val sortedList = combinedList.sortedByDescending { it.score }
+                val sortedList = filteredList.sortedByDescending { it.score }
 
                 // 6. Gán thứ hạng rank động từ 1 trở đi
                 val finalLeaderboard = sortedList.mapIndexed { index, user ->
@@ -620,8 +564,37 @@ class QuizViewModel @Inject constructor(
                 // 7. Cập nhật state
                 _uiState.update { it.copy(leaderboard = finalLeaderboard) }
             } catch (e: Exception) {
-                // Fail-safe fallback sang mockLeaderboard tĩnh khi xảy ra lỗi
-                _uiState.update { it.copy(leaderboard = mockLeaderboard) }
+                _uiState.update { it.copy(leaderboard = emptyList()) }
+            }
+        }
+    }
+
+    fun loadUserStats() {
+        viewModelScope.launch {
+            authRepository.getCurrentUser().onSuccess { user ->
+                if (user != null) {
+                    val compRate = if (user.quizCount > 0) {
+                        (user.quizAverageScore * 10).toInt().coerceIn(0, 100)
+                    } else 0
+                    
+                    _uiState.update { state ->
+                        state.copy(
+                            progress = QuizProgress(
+                                avgScore = user.quizAverageScore,
+                                completedCount = user.quizCount,
+                                completionRate = compRate
+                            )
+                        )
+                    }
+                } else {
+                    _uiState.update { state ->
+                        state.copy(progress = QuizProgress(0.0f, 0, 0))
+                    }
+                }
+            }.onFailure {
+                _uiState.update { state ->
+                    state.copy(progress = QuizProgress(0.0f, 0, 0))
+                }
             }
         }
     }
@@ -652,6 +625,7 @@ class QuizViewModel @Inject constructor(
      * Tự động sinh đề thi trắc nghiệm học thuật bằng Gemini AI và bắt đầu làm bài.
      */
     fun generateAndStartQuiz(
+        docId: String? = null,
         docTitle: String,
         count: Int,
         difficulty: Difficulty,
@@ -668,8 +642,19 @@ class QuizViewModel @Inject constructor(
 
         _uiState.update { it.copy(isLoading = true) }
         viewModelScope.launch {
-            val contentToUse = if (docContent.trim().isNotEmpty()) docContent else {
-                "Tài liệu môn học $docTitle ôn tập học thuật đại cương và chuyên ngành."
+            var contentToUse = docContent
+
+            // Nếu có docId, thử truy xuất nội dung lý thuyết thực tế từ cache trước
+            if (!docId.isNullOrEmpty()) {
+                documentRepository.getCachedDocViewerContent(docId).onSuccess { cachedContent ->
+                    if (cachedContent != null && cachedContent.content.trim().isNotEmpty()) {
+                        contentToUse = cachedContent.content
+                    }
+                }
+            }
+
+            if (contentToUse.trim().isEmpty()) {
+                contentToUse = "Tài liệu môn học $docTitle ôn tập học thuật đại cương và chuyên ngành."
             }
 
             aiRepository.generateQuizFromDocument(

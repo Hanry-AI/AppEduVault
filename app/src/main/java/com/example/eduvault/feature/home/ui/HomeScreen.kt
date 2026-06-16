@@ -251,6 +251,7 @@ fun HomeScreen(
                 }
 
                 quizViewModel.generateAndStartQuiz(
+                    docId = selectedDocObj?.id,
                     docTitle = docTitle,
                     count = count,
                     difficulty = difficulty,
@@ -284,18 +285,25 @@ fun HomeScreen(
                 DocType.SLIDE -> LibraryDocType.SLIDE
                 DocType.SUMMARY -> LibraryDocType.SUMMARY
             },
-            quantityLabel = "${recentDoc.pages} trang",
-            rating = 4.8f,
+            quantityLabel = recentDoc.quantityLabel,
+            rating = recentDoc.rating,
             views = "${recentDoc.views}",
-            bgIndex = recentDoc.bgIndex
+            bgIndex = recentDoc.bgIndex,
+            fileName = recentDoc.fileName,
+            downloadUrl = recentDoc.downloadUrl,
+            authorId = recentDoc.authorId,
+            fileSizeBytes = recentDoc.fileSizeBytes
         )
         // Xác định trạng thái đọc dựa trên AuthState + Credit
         val user = (uiState.authState as? AuthState.Authenticated)?.user
-        val isUnlocked = user?.unlockedDocuments?.contains(recentDoc.id) == true
+        val cost = calculatePrice(recentDoc.fileSizeBytes, recentDoc.quantityLabel)
+        val isUnlocked = user?.role == "admin" ||
+                         recentDoc.authorId == user?.uid ||
+                         user?.unlockedDocuments?.contains(recentDoc.id) == true
         val readerState = when {
             isUnlocked -> DocReaderState.Unlocked
             uiState.authState is AuthState.Guest -> DocReaderState.GuestLocked
-            user?.documentCredits == 0 -> DocReaderState.NoCredits
+            (user?.documentCredits ?: 0) < cost -> DocReaderState.NoCredits
             else -> DocReaderState.HasCredits(user?.documentCredits ?: 1)
         }
         LaunchedEffect(recentDoc.id) {
@@ -384,6 +392,22 @@ fun HomeScreen(
                 } else {
                     notesViewModel.openNoteEditor(doc.id, doc.title, doc.courseCode)
                 }
+            },
+            currentUserId = user?.uid ?: "",
+            currentUserRole = user?.role ?: "user",
+            onDeleteDoc = { docToDelete ->
+                libraryViewModel.deleteDocument(
+                    docId = docToDelete.id,
+                    onSuccess = {
+                        libraryViewModel.clearDocViewerContent()
+                        selectedRecentDoc = null
+                        viewModel.loadRecentDocuments()
+                        android.widget.Toast.makeText(context, "Đã xóa tài liệu thành công!", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onFailure = { err ->
+                        android.widget.Toast.makeText(context, "Xóa tài liệu thất bại: $err", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                )
             }
         )
     }
@@ -627,9 +651,11 @@ private fun HomeContent(
 
         // ── Hero Section ───────────────────────────────────────────────────
         item {
+            val user = (uiState.authState as? AuthState.Authenticated)?.user
             HeroSection(
                 onUploadClick = onUploadClick,
                 onOpenStudyAi = onOpenStudyAi,
+                user = user,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
             )
         }
@@ -708,22 +734,6 @@ private fun HomeContent(
             Spacer(modifier = Modifier.height(20.dp))
         }
 
-        // ── Topic Tags ─────────────────────────────────────────────────────
-        item {
-            SectionHeader(
-                title = "Chủ đề nổi bật",
-                modifier = Modifier.padding(horizontal = 14.dp)
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-        item {
-            TopicTagsSection(
-                tags = topicTags,
-                onTabSelected = onTabSelected,
-                modifier = Modifier.padding(horizontal = 14.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
     }
 }
 
@@ -841,6 +851,7 @@ private fun HomeTopBar(
 private fun HeroSection(
     onUploadClick: () -> Unit,
     onOpenStudyAi: () -> Unit,
+    user: com.example.eduvault.domain.model.User?,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "hero_float")
@@ -937,15 +948,15 @@ private fun HeroSection(
                 modifier = Modifier.padding(bottom = 20.dp)
             ) {
                 HeroFloatCard(
-                    emoji = "📝", label = "Ghi chú", subtitle = "Kinh tế vi mô Ch.3",
+                    emoji = "📝", label = "Ghi chú", subtitle = if (user != null) "${user.uploadCount} tài liệu" else "Tự động tạo",
                     modifier = Modifier.graphicsLayer { translationY = float1 }
                 )
                 HeroFloatCard(
-                    emoji = "🧩", label = "Quiz AI", subtitle = "12/20 câu đúng",
+                    emoji = "🧩", label = "Quiz AI", subtitle = if (user != null) "${user.quizCount} lượt làm" else "Luyện tập ngay",
                     modifier = Modifier.graphicsLayer { translationY = float2 }
                 )
                 HeroFloatCard(
-                    emoji = "📊", label = "Tóm tắt", subtitle = "Hoàn thành 85%",
+                    emoji = "📊", label = "Tóm tắt", subtitle = if (user != null) "${user.documentCredits} credit" else "Trích xuất cốt lõi",
                     modifier = Modifier.graphicsLayer { translationY = float3 }
                 )
             }
@@ -1290,7 +1301,7 @@ private fun DocCard(
                         .padding(horizontal = 5.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = "${doc.pages}tr",
+                        text = doc.quantityLabel.replace("tr", "trang"),
                         fontFamily = JetBrainsMonoFamily,
                         fontSize = 9.sp,
                         color = ColorTextOnLightSecondary,
@@ -1334,7 +1345,7 @@ private fun DocCard(
                             color = ColorTextOnLightSecondary,
                         )
                         Text(
-                            text = "⭐ ${doc.saves}",
+                            text = if (doc.rating <= 0f) "⭐ Chưa đánh giá" else "⭐ ${doc.rating}",
                             fontFamily = DmSansFamily,
                             fontSize = 10.sp,
                             color = ColorTextOnLightSecondary,
@@ -1712,6 +1723,7 @@ private class PreviewDocumentRepository : com.example.eduvault.domain.repository
     override suspend fun reportDocument(docId: String): Result<Unit> = Result.success(Unit)
     override suspend fun getCachedDocViewerContent(docId: String): Result<com.example.eduvault.domain.model.DocViewerTabsContent?> = Result.success(null)
     override suspend fun saveDocViewerContent(docId: String, content: com.example.eduvault.domain.model.DocViewerTabsContent): Result<Unit> = Result.success(Unit)
+    override suspend fun deleteDocument(docId: String): Result<Unit> = Result.success(Unit)
 }
 
 private class PreviewAiRepository : com.example.eduvault.domain.repository.AiRepository {
@@ -2980,7 +2992,6 @@ fun GuestLoginPromptDialog(
                     )
                 }
 
-                // Cancel
                 androidx.compose.material3.TextButton(onClick = onDismiss) {
                     Text(
                         text = "Để sau",
@@ -2992,4 +3003,25 @@ fun GuestLoginPromptDialog(
             }
         }
     }
+}
+
+private fun calculatePrice(fileSizeBytes: Long, quantityLabel: String): Int {
+    if (fileSizeBytes > 0L) {
+        val sizeInMb = fileSizeBytes / (1024.0 * 1024.0)
+        return when {
+            sizeInMb <= 2.0 -> 1
+            sizeInMb <= 5.0 -> 2
+            else -> 3
+        }
+    }
+    val cleanStr = quantityLabel.replace(",", ".").trim()
+    if (cleanStr.endsWith("MB", ignoreCase = true)) {
+        val sizeInMb = cleanStr.replace("MB", "", ignoreCase = true).trim().toDoubleOrNull() ?: 0.0
+        return when {
+            sizeInMb <= 2.0 -> 1
+            sizeInMb <= 5.0 -> 2
+            else -> 3
+        }
+    }
+    return 1
 }

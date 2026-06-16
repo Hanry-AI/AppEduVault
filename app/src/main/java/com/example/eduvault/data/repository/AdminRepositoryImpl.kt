@@ -54,7 +54,7 @@ class AdminRepositoryImpl @Inject constructor(
                     else -> com.example.eduvault.feature.library.ui.LibraryDocType.NOTE
                 }
                 val quantityLabel = doc.getString("quantityLabel") ?: "Tài liệu tự đăng"
-                val rating = doc.getDouble("rating")?.toFloat() ?: 5.0f
+                val rating = doc.getDouble("rating")?.toFloat() ?: 0.0f
                 val rawViews = doc.get("views")
                 val views = when (rawViews) {
                     is Number -> rawViews.toInt().toString()
@@ -64,6 +64,8 @@ class AdminRepositoryImpl @Inject constructor(
                 val aiVerified = doc.getBoolean("aiVerified") ?: false
                 val aiCheckResult = doc.getString("aiCheckResult") ?: ""
                 val reportCount = doc.getLong("reportCount")?.toInt() ?: 0
+                val authorId = doc.getString("authorId") ?: ""
+                val fileSizeBytes = doc.getLong("fileSizeBytes") ?: 0L
                 LibraryDoc(
                     id = id,
                     courseCode = courseCode,
@@ -76,7 +78,9 @@ class AdminRepositoryImpl @Inject constructor(
                     aiVerified = aiVerified,
                     aiCheckResult = aiCheckResult,
                     status = "PENDING",
-                    reportCount = reportCount
+                    reportCount = reportCount,
+                    authorId = authorId,
+                    fileSizeBytes = fileSizeBytes
                 )
             }
             Result.success(list)
@@ -113,7 +117,7 @@ class AdminRepositoryImpl @Inject constructor(
                     else -> com.example.eduvault.feature.library.ui.LibraryDocType.NOTE
                 }
                 val quantityLabel = doc.getString("quantityLabel") ?: "Tài liệu tự đăng"
-                val rating = doc.getDouble("rating")?.toFloat() ?: 5.0f
+                val rating = doc.getDouble("rating")?.toFloat() ?: 0.0f
                 val rawViews = doc.get("views")
                 val views = when (rawViews) {
                     is Number -> rawViews.toInt().toString()
@@ -124,6 +128,8 @@ class AdminRepositoryImpl @Inject constructor(
                 val aiCheckResult = doc.getString("aiCheckResult") ?: ""
                 val status = doc.getString("status") ?: "APPROVED"
                 val reportCount = doc.getLong("reportCount")?.toInt() ?: 0
+                val authorId = doc.getString("authorId") ?: ""
+                val fileSizeBytes = doc.getLong("fileSizeBytes") ?: 0L
                 LibraryDoc(
                     id = id,
                     courseCode = courseCode,
@@ -136,7 +142,9 @@ class AdminRepositoryImpl @Inject constructor(
                     aiVerified = aiVerified,
                     aiCheckResult = aiCheckResult,
                     status = status,
-                    reportCount = reportCount
+                    reportCount = reportCount,
+                    authorId = authorId,
+                    fileSizeBytes = fileSizeBytes
                 )
             }
             Result.success(list)

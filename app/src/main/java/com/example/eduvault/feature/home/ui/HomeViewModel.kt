@@ -222,18 +222,34 @@ class HomeViewModel @Inject constructor(
                         views = viewsInt,
                         saves = savesInt,
                         pages = pagesInt,
-                        bgIndex = doc.bgIndex
+                        bgIndex = doc.bgIndex,
+                        fileName = doc.fileName,
+                        downloadUrl = doc.downloadUrl,
+                        authorId = doc.authorId,
+                        fileSizeBytes = doc.fileSizeBytes,
+                        quantityLabel = doc.quantityLabel,
+                        rating = doc.rating
                     )
                 }
                 
-                // Chỉ dùng mock khi Firestore trống rỗng
+                // Calculate actual dynamic categories counts from Firestore documents
+                val tags = listOf(
+                    TopicTag("Kinh tế học", firestoreDocs.count { it.courseCode.contains("EC", ignoreCase = true) || it.title.contains("kinh tế", ignoreCase = true) }),
+                    TopicTag("Marketing", firestoreDocs.count { it.courseCode.contains("MKT", ignoreCase = true) }),
+                    TopicTag("Kế toán", firestoreDocs.count { it.courseCode.contains("ACC", ignoreCase = true) }),
+                    TopicTag("Pháp luật", firestoreDocs.count { it.courseCode.contains("LAW", ignoreCase = true) }),
+                    TopicTag("Thống kê", firestoreDocs.count { it.courseCode.contains("STAT", ignoreCase = true) }),
+                    TopicTag("Tài chính", firestoreDocs.count { it.courseCode.contains("FIN", ignoreCase = true) || it.title.contains("tài chính", ignoreCase = true) })
+                )
+                _topicTags.update { tags }
+                
                 if (converted.isNotEmpty()) {
                     _recentDocsFlow.value = converted.take(6)
                 } else {
-                    _recentDocsFlow.value = Companion.recentDocs
+                    _recentDocsFlow.value = emptyList()
                 }
             }.onFailure {
-                _recentDocsFlow.value = Companion.recentDocs
+                _recentDocsFlow.value = emptyList()
             }
         }
     }
@@ -241,7 +257,7 @@ class HomeViewModel @Inject constructor(
     fun loadDynamicActivity(userId: String) {
         viewModelScope.launch {
             if (userId.isBlank() || userId == "guest_user") {
-                _activityItemsFlow.value = Companion.activityItems
+                _activityItemsFlow.value = emptyList()
                 return@launch
             }
             
@@ -273,14 +289,13 @@ class HomeViewModel @Inject constructor(
                     )
                 }
                 
-                // Chỉ dùng mock khi Firestore trống rỗng
                 if (converted.isNotEmpty()) {
                     _activityItemsFlow.value = converted.take(5)
                 } else {
-                    _activityItemsFlow.value = Companion.activityItems
+                    _activityItemsFlow.value = emptyList()
                 }
             }.onFailure {
-                _activityItemsFlow.value = Companion.activityItems
+                _activityItemsFlow.value = emptyList()
             }
         }
     }

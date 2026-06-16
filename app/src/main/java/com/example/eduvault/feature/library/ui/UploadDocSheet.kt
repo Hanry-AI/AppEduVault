@@ -125,7 +125,7 @@ class UploadDocViewModel @Inject constructor(
             try {
                 val fileName = getFileName(context, uri) ?: "tailieu_${System.currentTimeMillis()}.pdf"
                 
-                val folder = File(context.filesDir, "uploaded_docs")
+                val folder = context.getExternalFilesDir("uploaded_docs") ?: File(context.filesDir, "uploaded_docs")
                 if (!folder.exists()) folder.mkdirs()
                 
                 val file = File(folder, fileName)
@@ -161,10 +161,6 @@ class UploadDocViewModel @Inject constructor(
             _uiState.update { it.copy(errorMessage = "Vui lòng nhập tiêu đề tài liệu.") }
             return
         }
-        if (state.subjectCode.trim().isEmpty()) {
-            _uiState.update { it.copy(errorMessage = "Vui lòng nhập mã môn học.") }
-            return
-        }
         if (state.selectedFileUri.isEmpty()) {
             _uiState.update { it.copy(errorMessage = "Vui lòng chọn file tài liệu từ thiết bị của bạn.") }
             return
@@ -174,7 +170,7 @@ class UploadDocViewModel @Inject constructor(
             _uiState.update { it.copy(isUploading = true, errorMessage = null) }
             documentRepository.uploadUserDocument(
                 title = state.title.trim(),
-                subjectCode = state.subjectCode.trim(),
+                subjectCode = state.subjectCode.trim().ifBlank { "TÀI LIỆU" },
                 docType = state.docType,
                 fileUri = state.selectedFileUri
             ).onSuccess {
@@ -423,23 +419,6 @@ fun UploadDocSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 12.dp),
-                            shape = RoundedCornerShape(11.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = ColorAmber,
-                                unfocusedBorderColor = ColorBorder,
-                                focusedLabelColor = ColorAmberDark,
-                                unfocusedLabelColor = ColorTextOnLightSecondary
-                            )
-                        )
-
-                        // Subject code
-                        OutlinedTextField(
-                            value = uiState.subjectCode,
-                            onValueChange = viewModel::onSubjectCodeChange,
-                            label = { Text("Mã môn học (ví dụ: EC0201, MKT301)", fontFamily = DmSansFamily) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 14.dp),
                             shape = RoundedCornerShape(11.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = ColorAmber,

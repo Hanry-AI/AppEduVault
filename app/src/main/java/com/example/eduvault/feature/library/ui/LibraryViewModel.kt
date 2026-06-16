@@ -41,7 +41,6 @@ class LibraryViewModel @Inject constructor(
     private val allMockDocs = MockDataProvider.allMockDocs
 
     init {
-        allDocsList.addAll(allMockDocs)
         loadDocuments()
         loadCategories()
         loadUserCredits()
@@ -51,12 +50,10 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             documentRepository.getDocuments().onSuccess { firestoreDocs ->
                 allDocsList.clear()
-                allDocsList.addAll(allMockDocs)
-                val existingIds = allMockDocs.map { it.id }.toSet()
-                val uniqueFirestoreDocs = firestoreDocs.filter { it.id !in existingIds }
-                allDocsList.addAll(uniqueFirestoreDocs)
+                allDocsList.addAll(firestoreDocs)
                 syncSavedStatusAndFilter()
             }.onFailure {
+                allDocsList.clear()
                 syncSavedStatusAndFilter()
             }
         }
@@ -80,7 +77,9 @@ class LibraryViewModel @Inject constructor(
                         documentCredits = user?.documentCredits ?: -1,
                         uploadCount = user?.uploadCount ?: 0,
                         unlockedDocuments = user?.unlockedDocuments ?: emptyList(),
-                        savedDocuments = user?.savedDocuments ?: emptyList()
+                        savedDocuments = user?.savedDocuments ?: emptyList(),
+                        currentUserId = user?.uid ?: "",
+                        currentUserRole = user?.role ?: "user"
                     )
                 }
                 syncSavedStatusAndFilter()
@@ -252,8 +251,27 @@ class LibraryViewModel @Inject constructor(
                 SortType.RATING -> filtered.sortedByDescending { it.rating }
             }
 
+            val notesCount = allDocsList.count { it.type == LibraryDocType.NOTE }
+            val quizzesCount = allDocsList.count { it.type == LibraryDocType.QUIZ }
+            val slidesCount = allDocsList.count { it.type == LibraryDocType.SLIDE }
+            val summariesCount = allDocsList.count { it.type == LibraryDocType.SUMMARY }
+
+            var flashcardCount = 0
+            val currentFirebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+            if (currentFirebaseUser != null) {
+                try {
+                    val fcSnapshot = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        .collection("flashcards")
+                        .whereEqualTo("authorId", currentFirebaseUser.uid)
+                        .get().await()
+                    flashcardCount = fcSnapshot.size()
+                } catch (e: Exception) {
+                    android.util.Log.e("LibraryViewModel", "Error fetching flashcards count: ${e.localizedMessage}")
+                }
+            }
+
             val actualDocsCount = allDocsList.size
-            val actualSubjectsCount = _subjects.value.size - 1 // loại trừ "Tất cả"
+            val actualSubjectsCount = allDocsList.map { it.courseCode.trim().uppercase() }.distinct().count { it.isNotEmpty() }
             val savedCount = allDocsList.count { it.isSaved }
 
             val currentPageVal = _uiState.value.currentPage
@@ -271,8 +289,16 @@ class LibraryViewModel @Inject constructor(
                     totalPages = totalPagesVal,
                     currentPage = safePage,
                     bannerTotalDocs = actualDocsCount,
-                    bannerTotalSubjects = if (actualSubjectsCount > 0) actualSubjectsCount else 0,
-                    bannerTotalSaved = savedCount
+                    bannerTotalSubjects = actualSubjectsCount,
+                    bannerTotalSaved = savedCount,
+                    docTypeCounts = mapOf(
+                        DocTypeFilter.ALL to actualDocsCount,
+                        DocTypeFilter.NOTE to notesCount,
+                        DocTypeFilter.QUIZ to quizzesCount,
+                        DocTypeFilter.SLIDE to slidesCount,
+                        DocTypeFilter.SUMMARY to summariesCount,
+                        DocTypeFilter.FLASHCARD to flashcardCount
+                    )
                 )
             }
         }
@@ -465,6 +491,22 @@ class LibraryViewModel @Inject constructor(
                 isLoadingDocContent = false,
                 docContentError = null
             )
+        }
+    }
+
+    /**
+     * Cho phép Admin hoặc Tác giả xóa tài liệu khỏi hệ thống.
+     */
+    fun deleteDocument(docId: String, onSuccess: () -> Unit, onFailure: (String) -> Unit) {
+        viewModelScope.launch {
+            documentRepository.deleteDocument(docId).onSuccess {
+                // Xóa khỏi danh sách RAM cục bộ ngay lập tức để cập nhật UI nhanh
+                allDocsList.removeAll { it.id == docId }
+                filterAndSortDocs()
+                onSuccess()
+            }.onFailure { error ->
+                onFailure(error.localizedMessage ?: "Lỗi xóa tài liệu")
+            }
         }
     }
 }

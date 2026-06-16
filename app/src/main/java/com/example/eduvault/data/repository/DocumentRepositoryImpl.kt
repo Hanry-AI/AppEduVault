@@ -24,10 +24,94 @@ class DocumentRepositoryImpl @Inject constructor(
     private val storage: FirebaseStorage,
     private val notificationRepository: NotificationRepository
 ) : DocumentRepository {
-
     init {
         CoroutineScope(Dispatchers.IO).launch {
-            seedMockDocumentsIfNotExist()
+            try {
+                // 1. Xóa các tài liệu mock cố định bằng ID
+                val mockDocIds = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "m1", "m2", "m3", "m4", "m5")
+                for (docId in mockDocIds) {
+                    firestore.collection("documents").document(docId).delete().await()
+                }
+
+                // 2. Xóa các tài liệu được đánh dấu authorId là "system_mock"
+                val systemMockDocs = firestore.collection("documents")
+                    .whereEqualTo("authorId", "system_mock")
+                    .get()
+                    .await()
+                for (doc in systemMockDocs.documents) {
+                    firestore.collection("documents").document(doc.id).delete().await()
+                }
+
+                // 3. Xóa các quiz trắc nghiệm mock cố định
+                val mockQuizIds = listOf("quiz_001", "quiz_002", "quiz_003", "1", "2", "3", "4", "5", "6")
+                for (quizId in mockQuizIds) {
+                    firestore.collection("quizzes").document(quizId).delete().await()
+                }
+
+                // 4. Xóa các quiz trắc nghiệm do "system_mock" tạo ra
+                val systemMockQuizzes = firestore.collection("quizzes")
+                    .whereEqualTo("authorId", "system_mock")
+                    .get()
+                    .await()
+                for (doc in systemMockQuizzes.documents) {
+                    firestore.collection("quizzes").document(doc.id).delete().await()
+                }
+
+                // 5. Xóa các tài khoản mock và tài khoản system_mock
+                val mockUsers = firestore.collection("users")
+                    .whereEqualTo("role", "mock")
+                    .get()
+                    .await()
+                for (doc in mockUsers.documents) {
+                    firestore.collection("users").document(doc.id).delete().await()
+                }
+                firestore.collection("users").document("system_mock").delete().await()
+
+                // 6. Reset thông tin tiến độ và lượt tải (credits) của người dùng hiện tại đang đăng nhập
+                val firebaseUser = firebaseAuth.currentUser
+                if (firebaseUser != null) {
+                    val userRef = firestore.collection("users").document(firebaseUser.uid)
+                    userRef.update(
+                        mapOf(
+                            "quizCount" to 0,
+                            "quizAverageScore" to 0.0f,
+                            "totalXp" to 0,
+                            "uploadCount" to 0,
+                            "documentCredits" to 5, // Reset về 5 credits mặc định ban đầu
+                            "unlockedDocuments" to emptyList<String>(),
+                            "savedDocuments" to emptyList<String>()
+                        )
+                    ).await()
+
+                    // Xóa toàn bộ thông báo (notifications) của người dùng này để xóa sạch các hoạt động mock
+                    val userNotifs = firestore.collection("notifications")
+                        .whereEqualTo("userId", firebaseUser.uid)
+                        .get()
+                        .await()
+                    for (doc in userNotifs.documents) {
+                        firestore.collection("notifications").document(doc.id).delete().await()
+                    }
+                }
+
+                // 7. Temporary debug cleanup for "Xác suất thống kê" (to be discarded later)
+                if (com.example.eduvault.BuildConfig.DEBUG) {
+                    val xsDocs = firestore.collection("documents")
+                        .whereEqualTo("title", "Xác suất thống kê")
+                        .get()
+                        .await()
+                    for (doc in xsDocs.documents) {
+                        val downloadUrl = doc.getString("downloadUrl") ?: ""
+                        if (downloadUrl.isEmpty()) {
+                            firestore.collection("documents").document(doc.id).delete().await()
+                            android.util.Log.d("DocumentRepository", "Temporary debug: deleted corrupted document Xác suất thống kê")
+                        }
+                    }
+                }
+
+                android.util.Log.d("DocumentRepository", "Đã dọn dẹp sạch sẽ dữ liệu mock và reset user stats thành công.")
+            } catch (e: Exception) {
+                android.util.Log.e("DocumentRepository", "Lỗi khi dọn dẹp dữ liệu mock: ${e.localizedMessage}")
+            }
         }
     }
 
@@ -64,17 +148,17 @@ class DocumentRepositoryImpl @Inject constructor(
                 else -> "APPROVED" to "SAFE"
             }
 
-            // Tải file lên Firebase Storage bằng Coroutines
             var downloadUrl = ""
             var fileName = ""
             var fileSizeString = ""
             var detectedContentType = ""
+            var fileSizeInBytes = 0L
             
             if (fileUri.isNotEmpty()) {
                 val localFile = java.io.File(fileUri)
                 if (localFile.exists()) {
                     fileName = localFile.name
-                    val fileSizeInBytes = localFile.length()
+                    fileSizeInBytes = localFile.length()
                     fileSizeString = if (fileSizeInBytes >= 1024 * 1024) {
                         String.format(java.util.Locale.US, "%.2f MB", fileSizeInBytes / (1024.0 * 1024.0))
                     } else {
@@ -95,14 +179,82 @@ class DocumentRepositoryImpl @Inject constructor(
                     
                     val uuid = java.util.UUID.randomUUID().toString()
                     val storagePath = "documents/${firebaseUser.uid}/${uuid}_$fileName"
-                    val storageRef = storage.reference.child(storagePath)
                     
-                    val metadata = com.google.firebase.storage.StorageMetadata.Builder()
-                        .setContentType(detectedContentType)
-                        .build()
-                        
-                    storageRef.putFile(android.net.Uri.fromFile(localFile), metadata).await()
-                    downloadUrl = storageRef.downloadUrl.await().toString()
+                    var success = false
+                    var lastException: Exception? = null
+                    
+                    // Thử lần 1: Sử dụng default storage reference từ Hilt
+                    try {
+                        android.util.Log.d("DocumentRepository", "Thử tải lên Storage với Default Bucket")
+                        val storageRef = storage.reference.child(storagePath)
+                        val metadata = com.google.firebase.storage.StorageMetadata.Builder()
+                            .setContentType(detectedContentType)
+                            .build()
+                        val uploadTask = storageRef.putFile(android.net.Uri.fromFile(localFile), metadata)
+                        downloadUrl = uploadTask.continueWithTask { task ->
+                            if (!task.isSuccessful) {
+                                task.exception?.let { throw it }
+                            }
+                            storageRef.downloadUrl
+                        }.await().toString()
+                        success = true
+                    } catch (e: Exception) {
+                        android.util.Log.e("DocumentRepository", "Lỗi tải lên Default Bucket: ${e.localizedMessage}")
+                        lastException = e
+                    }
+                    
+                    // Thử lần 2: Nếu thất bại, thử ép buộc sử dụng gs://appeduvault.firebasestorage.app
+                    if (!success) {
+                        try {
+                            android.util.Log.d("DocumentRepository", "Thử tải lên Storage với gs://appeduvault.firebasestorage.app")
+                            val storageInstance = com.google.firebase.storage.FirebaseStorage.getInstance("gs://appeduvault.firebasestorage.app")
+                            val storageRef = storageInstance.reference.child(storagePath)
+                            val metadata = com.google.firebase.storage.StorageMetadata.Builder()
+                                .setContentType(detectedContentType)
+                                .build()
+                            val uploadTask = storageRef.putFile(android.net.Uri.fromFile(localFile), metadata)
+                            downloadUrl = uploadTask.continueWithTask { task ->
+                                if (!task.isSuccessful) {
+                                    task.exception?.let { throw it }
+                                }
+                                storageRef.downloadUrl
+                            }.await().toString()
+                            success = true
+                            lastException = null
+                        } catch (e: Exception) {
+                            android.util.Log.e("DocumentRepository", "Lỗi tải lên gs://appeduvault.firebasestorage.app: ${e.localizedMessage}")
+                            lastException = e
+                        }
+                    }
+                    
+                    // Thử lần 3: Nếu vẫn thất bại, thử ép buộc sử dụng gs://appeduvault.appspot.com (Legacy format)
+                    if (!success) {
+                        try {
+                            android.util.Log.d("DocumentRepository", "Thử tải lên Storage với gs://appeduvault.appspot.com")
+                            val storageInstance = com.google.firebase.storage.FirebaseStorage.getInstance("gs://appeduvault.appspot.com")
+                            val storageRef = storageInstance.reference.child(storagePath)
+                            val metadata = com.google.firebase.storage.StorageMetadata.Builder()
+                                .setContentType(detectedContentType)
+                                .build()
+                            val uploadTask = storageRef.putFile(android.net.Uri.fromFile(localFile), metadata)
+                            downloadUrl = uploadTask.continueWithTask { task ->
+                                if (!task.isSuccessful) {
+                                    task.exception?.let { throw it }
+                                }
+                                storageRef.downloadUrl
+                            }.await().toString()
+                            success = true
+                            lastException = null
+                        } catch (e: Exception) {
+                            android.util.Log.e("DocumentRepository", "Lỗi tải lên gs://appeduvault.appspot.com: ${e.localizedMessage}")
+                            lastException = e
+                        }
+                    }
+                    
+                    if (lastException != null) {
+                        android.util.Log.w("DocumentRepository", "Cloud Storage upload failed (possibly Spark free plan billing limitation). Proceeding with Firestore metadata-only mode. Error: ${lastException.localizedMessage}")
+                        downloadUrl = ""
+                    }
                 }
             }
 
@@ -114,13 +266,14 @@ class DocumentRepositoryImpl @Inject constructor(
                 "title" to title.trim(),
                 "type" to docType,
                 "quantityLabel" to if (fileSizeString.isNotEmpty()) fileSizeString else "Tài liệu tự đăng",
-                "rating" to 5.0f,
+                "rating" to 0.0f,
                 "views" to 0L,
                 "school" to school,
                 "authorId" to firebaseUser.uid,
                 "downloadUrl" to downloadUrl,
                 "fileName" to fileName,
                 "fileSize" to fileSizeString,
+                "fileSizeBytes" to fileSizeInBytes,
                 "contentType" to detectedContentType,
                 "uploadedAt" to com.google.firebase.Timestamp(java.util.Date()),
                 "createdAt" to com.google.firebase.Timestamp(java.util.Date()),
@@ -184,7 +337,7 @@ class DocumentRepositoryImpl @Inject constructor(
                 }
                 
                 val quantityLabel = doc.getString("quantityLabel") ?: "Tài liệu tự đăng"
-                val rating = doc.getDouble("rating")?.toFloat() ?: 5.0f
+                val rating = doc.getDouble("rating")?.toFloat() ?: 0.0f
                 
                 val rawViews = doc.get("views")
                 val views = when (rawViews) {
@@ -196,6 +349,11 @@ class DocumentRepositoryImpl @Inject constructor(
                 val aiVerified = doc.getBoolean("aiVerified") ?: false
                 val aiCheckResult = doc.getString("aiCheckResult") ?: ""
                 val reportCount = doc.getLong("reportCount")?.toInt() ?: 0
+
+                val fileName = doc.getString("fileName") ?: ""
+                val downloadUrl = doc.getString("downloadUrl") ?: ""
+                val authorId = doc.getString("authorId") ?: ""
+                val fileSizeBytes = doc.getLong("fileSizeBytes") ?: 0L
 
                 LibraryDoc(
                     id = id,
@@ -209,7 +367,11 @@ class DocumentRepositoryImpl @Inject constructor(
                     aiVerified = aiVerified,
                     aiCheckResult = aiCheckResult,
                     status = status,
-                    reportCount = reportCount
+                    reportCount = reportCount,
+                    fileName = fileName,
+                    downloadUrl = downloadUrl,
+                    authorId = authorId,
+                    fileSizeBytes = fileSizeBytes
                 )
             }
             Result.success(list)
@@ -273,6 +435,27 @@ class DocumentRepositoryImpl @Inject constructor(
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteDocument(docId: String): Result<Unit> {
+        return try {
+            val docSnap = firestore.collection("documents").document(docId).get().await()
+            if (docSnap.exists()) {
+                val downloadUrl = docSnap.getString("downloadUrl") ?: docSnap.getString("fileUri") ?: ""
+                if (downloadUrl.isNotEmpty() && downloadUrl.contains("firebasestorage.googleapis.com")) {
+                    try {
+                        val storageRef = storage.getReferenceFromUrl(downloadUrl)
+                        storageRef.delete().await()
+                    } catch (e: Exception) {
+                        android.util.Log.e("DocumentRepository", "Failed to delete storage file: ${e.localizedMessage}")
+                    }
+                }
+            }
+            firestore.collection("documents").document(docId).delete().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(Exception("Xóa tài liệu thất bại: ${e.localizedMessage}"))
         }
     }
 

@@ -32,6 +32,12 @@ data class RecentDoc(
     val saves: Int,
     val pages: Int,
     val bgIndex: Int = 0,
+    val fileName: String = "",
+    val downloadUrl: String = "",
+    val authorId: String = "",
+    val fileSizeBytes: Long = 0L,
+    val quantityLabel: String = "",
+    val rating: Float = 0f
 )
 
 enum class DocType(val label: String) {

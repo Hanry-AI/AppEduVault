@@ -40,4 +40,9 @@ interface DocumentRepository {
         docId: String, 
         content: DocViewerTabsContent
     ): Result<Unit>
+
+    /**
+     * Xóa tài liệu học tập khỏi hệ thống.
+     */
+    suspend fun deleteDocument(docId: String): Result<Unit>
 }

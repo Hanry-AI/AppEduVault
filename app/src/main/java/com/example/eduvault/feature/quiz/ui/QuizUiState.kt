@@ -82,7 +82,7 @@ data class QuizUiState(
 
     // Dashboard state
     val quizSets: List<QuizSet> = emptyList(),
-    val progress: QuizProgress = QuizProgress(8.5f, 18, 92),
+    val progress: QuizProgress = QuizProgress(0.0f, 0, 0),
     val leaderboard: List<LeaderboardUser> = emptyList(),
 
     // Player state

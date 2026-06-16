@@ -129,6 +129,34 @@ fun QuizContent(
                 )
             }
         }
+
+        // Loading Overlay khi AI đang sinh câu hỏi trắc nghiệm
+        if (uiState.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(enabled = false) {},
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = ColorAmber,
+                        modifier = Modifier.size(44.dp)
+                    )
+                    Text(
+                        text = "AI đang thiết kế đề thi trắc nghiệm cho bạn...",
+                        fontFamily = DmSansFamily,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -159,58 +187,6 @@ private fun QuizDashboard(
 
         // Progress Stats Grid
         QuizProgressGrid(progress = uiState.progress)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Subject Filter
-        SectionTitle(title = "Theo dõi môn học")
-        Spacer(modifier = Modifier.height(10.dp))
-        QuizSubjectChipsRow(
-            selectedSubject = uiState.selectedSubject,
-            onSubjectSelected = viewModel::onSubjectSelected
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Quiz Sets Grid (chunked to prevent scroll nesting issues)
-        SectionTitle(title = "Bộ đề trắc nghiệm AI")
-        Spacer(modifier = Modifier.height(10.dp))
-
-        if (uiState.quizSets.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(120.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Không có bộ đề nào phù hợp",
-                    fontFamily = DmSansFamily,
-                    color = ColorTextOnLightSecondary,
-                    fontSize = 14.sp
-                )
-            }
-        } else {
-            val chunkedSets = uiState.quizSets.chunked(2)
-            chunkedSets.forEach { rowItems ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    rowItems.forEach { quizSet ->
-                        QuizSetCard(
-                            quizSet = quizSet,
-                            onPlayClick = { viewModel.startQuiz(quizSet) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    if (rowItems.size == 1) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -771,12 +747,14 @@ private fun LeaderboardCard(leaderboard: List<LeaderboardUser>) {
                             fontSize = 13.sp,
                             color = ColorInk
                         )
-                        Text(
-                            text = user.university,
-                            fontFamily = DmSansFamily,
-                            fontSize = 10.5.sp,
-                            color = ColorTextOnLightSecondary
-                        )
+                        if (user.university.isNotEmpty()) {
+                            Text(
+                                text = user.university,
+                                fontFamily = DmSansFamily,
+                                fontSize = 10.5.sp,
+                                color = ColorTextOnLightSecondary
+                            )
+                        }
                     }
 
                     // Score

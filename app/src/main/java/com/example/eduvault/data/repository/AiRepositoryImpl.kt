@@ -112,7 +112,7 @@ class AiRepositoryImpl @Inject constructor() : AiRepository {
                 }
             """.trimIndent()
 
-            val response = model.generateContent(prompt)
+            val response = model.generateContentWithRetry(prompt)
             val jsonText = response.text ?: return@withContext Result.failure(Exception("AI trả về phản hồi rỗng."))
 
             // Parse JSON an toàn kèm cơ chế Bắt lỗi định dạng (Fail-safe parsing)
@@ -208,7 +208,7 @@ class AiRepositoryImpl @Inject constructor() : AiRepository {
                 5. Định dạng: Trả về kết quả dạng Markdown sạch sẽ để hiển thị giao diện đẹp mắt (sử dụng in đậm, bullet points rõ ràng).
             """.trimIndent()
 
-            val response = model.generateContent(prompt)
+            val response = model.generateContentWithRetry(prompt)
             val summaryText = response.text ?: return@withContext Result.failure(Exception("Gemini trả về phản hồi tóm tắt rỗng."))
             Result.success(summaryText.trim())
         } catch (e: Exception) {
@@ -250,7 +250,7 @@ class AiRepositoryImpl @Inject constructor() : AiRepository {
                 3. Văn phong: Giàu tính sư phạm, thân thiện, mang tính khích lệ tinh thần tự học.
             """.trimIndent()
 
-            val response = model.generateContent(prompt)
+            val response = model.generateContentWithRetry(prompt)
             val responseText = response.text ?: return@withContext Result.failure(Exception("Gemini trả về phản hồi rỗng."))
             Result.success(responseText.trim())
         } catch (e: Exception) {
@@ -305,7 +305,7 @@ class AiRepositoryImpl @Inject constructor() : AiRepository {
                 Câu hỏi mới của học sinh: "$question"
             """.trimIndent()
 
-            val response = model.generateContent(prompt)
+            val response = model.generateContentWithRetry(prompt)
             val responseText = response.text ?: return@withContext Result.failure(Exception("Gemini trả về phản hồi rỗng."))
             Result.success(responseText.trim())
         } catch (e: Exception) {
@@ -357,7 +357,7 @@ class AiRepositoryImpl @Inject constructor() : AiRepository {
                 Tuyệt đối không bao bọc bởi ```json hay bất kỳ văn bản chào hỏi nào khác ngoài chuỗi JSON.
             """.trimIndent()
 
-            val response = model.generateContent(prompt)
+            val response = model.generateContentWithRetry(prompt)
             val rawText = response.text ?: return@withContext Result.failure(Exception("AI phản hồi rỗng."))
             
             // JSON Sanitizer an toàn
@@ -395,6 +395,32 @@ class AiRepositoryImpl @Inject constructor() : AiRepository {
             clean = clean.substringBeforeLast("```")
         }
         return clean.trim()
+    }
+
+     private suspend fun GenerativeModel.generateContentWithRetry(prompt: String): com.google.ai.client.generativeai.type.GenerateContentResponse {
+        var retries = 4
+        var delayMs = 1500L
+        while (true) {
+            try {
+                return this.generateContent(prompt)
+            } catch (e: Exception) {
+                retries--
+                val errMsg = e.localizedMessage ?: ""
+                val isRetryable = errMsg.contains("503") || 
+                                  errMsg.contains("demand") || 
+                                  errMsg.contains("UNAVAILABLE") || 
+                                  errMsg.contains("MissingFieldException") || 
+                                  errMsg.contains("ResourceExhausted") ||
+                                  errMsg.contains("429")
+                if (retries > 0 && isRetryable) {
+                    android.util.Log.w("AiRepository", "Gemini qua tai hoac gap loi serialization (503/429). Thu lai sau ${delayMs}ms. Loi: $errMsg")
+                    kotlinx.coroutines.delay(delayMs)
+                    delayMs *= 2
+                } else {
+                    throw e
+                }
+            }
+        }
     }
 
     companion object {

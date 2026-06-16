@@ -180,36 +180,51 @@ class AuthRepositoryImpl @Inject constructor(
             ?: return Result.failure(Exception("Người dùng chưa đăng nhập."))
         return try {
             val userRef = firestore.collection(USERS_COLLECTION).document(firebaseUser.uid)
+            val docRef = firestore.collection("documents").document(docId)
             
-            val snapshot = userRef.get().await()
-            val currentCredits = snapshot.getLong("documentCredits")?.toInt() ?: 1
-            val unlockedList = snapshot.get("unlockedDocuments") as? List<*>
-            val unlockedDocs = unlockedList?.mapNotNull { it?.toString() } ?: emptyList()
-            
-            if (unlockedDocs.contains(docId)) {
-                val user = fetchUserFromFirestore(firebaseUser.uid)
-                    ?: return Result.failure(Exception("Không thể cập nhật thông tin người dùng."))
-                return Result.success(user)
-            }
-            
-            if (currentCredits <= 0) {
-                return Result.failure(Exception("Bạn đã hết lượt sử dụng tài liệu. Hãy chia sẻ 1 tài liệu học tập của mình để nhận thêm lượt!"))
-            }
-            
-            val newCredits = currentCredits - 1
-            userRef.update(
-                mapOf(
+            firestore.runTransaction { transaction ->
+                val userSnapshot = transaction.get(userRef)
+                val currentCredits = userSnapshot.getLong("documentCredits")?.toInt() ?: 1
+                val unlockedList = userSnapshot.get("unlockedDocuments") as? List<*>
+                val unlockedDocs = unlockedList?.mapNotNull { it?.toString() } ?: emptyList()
+                
+                if (unlockedDocs.contains(docId)) {
+                    return@runTransaction
+                }
+                
+                val docSnapshot = transaction.get(docRef)
+                if (!docSnapshot.exists()) {
+                    throw Exception("Tài liệu không tồn tại trên hệ thống.")
+                }
+                val fileSizeBytes = docSnapshot.getLong("fileSizeBytes") ?: 0L
+                val quantityLabel = docSnapshot.getString("quantityLabel") ?: ""
+                val cost = calculatePrice(fileSizeBytes, quantityLabel)
+                
+                if (currentCredits < cost) {
+                    throw Exception("Bạn cần $cost credit để mở khóa tài liệu này, nhưng hiện tại bạn chỉ có $currentCredits credit. Hãy chia sẻ 1 tài liệu học tập của mình để nhận thêm lượt!")
+                }
+                
+                val newCredits = currentCredits - cost
+                val newUnlockedDocs = unlockedDocs + docId
+                transaction.update(userRef, mapOf(
                     "documentCredits" to newCredits,
-                    "unlockedDocuments" to com.google.firebase.firestore.FieldValue.arrayUnion(docId)
-                )
-            ).await()
+                    "unlockedDocuments" to newUnlockedDocs
+                ))
+            }.await()
             
             val updatedUser = fetchUserFromFirestore(firebaseUser.uid)
                 ?: return Result.failure(Exception("Không thể cập nhật thông tin người dùng."))
             
             Result.success(updatedUser)
         } catch (e: Exception) {
-            Result.failure(Exception(mapFirebaseError(e.message)))
+            val rawMsg = e.message ?: ""
+            val friendlyMsg = when {
+                rawMsg.contains("Bạn cần") || rawMsg.contains("Tài liệu không") -> rawMsg
+                e.cause?.message?.contains("Bạn cần") == true -> e.cause?.message ?: ""
+                e.cause?.message?.contains("Tài liệu không") == true -> e.cause?.message ?: ""
+                else -> mapFirebaseError(e.message)
+            }
+            Result.failure(Exception(friendlyMsg))
         }
     }
 
@@ -615,5 +630,26 @@ class AuthRepositoryImpl @Inject constructor(
                 "Email hoặc mật khẩu không đúng."
             else -> "Đã xảy ra lỗi. Vui lòng thử lại."
         }
+    }
+
+    private fun calculatePrice(fileSizeBytes: Long, quantityLabel: String): Int {
+        if (fileSizeBytes > 0L) {
+            val sizeInMb = fileSizeBytes / (1024.0 * 1024.0)
+            return when {
+                sizeInMb <= 2.0 -> 1
+                sizeInMb <= 5.0 -> 2
+                else -> 3
+            }
+        }
+        val cleanStr = quantityLabel.replace(",", ".").trim()
+        if (cleanStr.endsWith("MB", ignoreCase = true)) {
+            val sizeInMb = cleanStr.replace("MB", "", ignoreCase = true).trim().toDoubleOrNull() ?: 0.0
+            return when {
+                sizeInMb <= 2.0 -> 1
+                sizeInMb <= 5.0 -> 2
+                else -> 3
+            }
+        }
+        return 1
     }
 }

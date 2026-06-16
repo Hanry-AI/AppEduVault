@@ -19,6 +19,7 @@ data class LibraryUiState(
     val unlockedDocuments: List<String> = emptyList(),
     val documents: List<LibraryDoc> = emptyList(),
     val savedDocuments: List<String> = emptyList(),
+    val docTypeCounts: Map<DocTypeFilter, Int> = emptyMap(),
     
     // Dynamic Banner Stats
     val bannerTotalDocs: Int = 0,
@@ -28,7 +29,9 @@ data class LibraryUiState(
     // DocViewer Dynamic Content State
     val activeDocContent: com.example.eduvault.domain.model.DocViewerTabsContent? = null,
     val isLoadingDocContent: Boolean = false,
-    val docContentError: String? = null
+    val docContentError: String? = null,
+    val currentUserId: String = "",
+    val currentUserRole: String = "user"
 )
 
 enum class SortType(val label: String) {
@@ -66,5 +69,9 @@ data class LibraryDoc(
     val aiVerified: Boolean = false,
     val aiCheckResult: String = "",
     val status: String = "APPROVED",
-    val reportCount: Int = 0
+    val reportCount: Int = 0,
+    val fileName: String = "",
+    val downloadUrl: String = "",
+    val authorId: String = "",
+    val fileSizeBytes: Long = 0L
 )
